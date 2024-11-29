@@ -20,7 +20,7 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Annatomic",
         native_options,
-        Box::new(|cc| Ok(Box::new(annatomic::TemplateApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(annatomic::AnnatomicApp::new(cc)))),
     )
 }
 
@@ -50,7 +50,7 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(annatomic::TemplateApp::new(cc)))),
+                Box::new(|cc| Ok(Box::new(annatomic::AnnatomicApp::new(cc)))),
             )
             .await;
 
