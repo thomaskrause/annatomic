@@ -92,9 +92,10 @@ impl eframe::App for AnnatomicApp {
                 ui.horizontal(|ui| {
                     for sent_nr in 0..NUMBER_OF_SENTENCES {
                         let mut sentence_rectangle = None;
-                        for t in EXAMPLE_SENTENCE {
+                        let mut layer2_rectangle = None;
+                        for (idx, t) in EXAMPLE_SENTENCE.iter().enumerate() {
                             let token_rect = ui
-                                .label(RichText::new(t).font(FontId::proportional(14.0)))
+                                .label(RichText::new(*t).font(FontId::proportional(14.0)))
                                 .rect
                                 .translate(Vec2::new(0.0, 20.0));
 
@@ -103,6 +104,12 @@ impl eframe::App for AnnatomicApp {
                                     .get_or_insert_with(|| token_rect)
                                     .union(token_rect),
                             );
+                            if idx > 2 && idx < 8 {
+                                let offset = token_rect.translate(Vec2::new(0.0, 25.0));
+                                layer2_rectangle = Some(
+                                    layer2_rectangle.get_or_insert_with(|| offset).union(offset),
+                                );
+                            }
                         }
                         if let Some(sentence_rectangle) = sentence_rectangle {
                             ui.painter().rect_filled(
@@ -119,9 +126,24 @@ impl eframe::App for AnnatomicApp {
                                 Color32::WHITE,
                             );
                         }
+                        if let Some(layer2_rectangle) = layer2_rectangle {
+                            ui.painter().rect_filled(
+                                layer2_rectangle,
+                                Rounding::ZERO,
+                                Color32::DARK_GRAY,
+                            );
+
+                            ui.painter().text(
+                                layer2_rectangle.center(),
+                                Align2::CENTER_CENTER,
+                                format!("Layer 2 - {sent_nr}"),
+                                FontId::proportional(14.0),
+                                Color32::WHITE,
+                            );
+                        }
                     }
                 });
-                ui.add_space(30.0);
+                ui.add_space(80.0);
             });
 
             ui.add_space(16.0);
