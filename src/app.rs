@@ -1,3 +1,5 @@
+use egui::{Align2, Color32, FontId, RichText, Rounding, Vec2};
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
@@ -86,13 +88,40 @@ impl eframe::App for AnnatomicApp {
             ui.heading("Annatomic Token demo");
 
             egui::ScrollArea::horizontal().show(ui, |ui| {
+                ui.add_space(10.0);
                 ui.horizontal(|ui| {
-                    for _ in 0..NUMBER_OF_SENTENCES {
+                    for sent_nr in 0..NUMBER_OF_SENTENCES {
+                        let mut sentence_rectangle = None;
                         for t in EXAMPLE_SENTENCE {
-                            ui.label(t);
+                            let token_rect = ui
+                                .label(RichText::new(t).font(FontId::proportional(14.0)))
+                                .rect
+                                .translate(Vec2::new(0.0, 20.0));
+
+                            sentence_rectangle = Some(
+                                sentence_rectangle
+                                    .get_or_insert_with(|| token_rect)
+                                    .union(token_rect),
+                            );
+                        }
+                        if let Some(sentence_rectangle) = sentence_rectangle {
+                            ui.painter().rect_filled(
+                                sentence_rectangle,
+                                Rounding::ZERO,
+                                Color32::DARK_GRAY,
+                            );
+
+                            ui.painter().text(
+                                sentence_rectangle.center(),
+                                Align2::CENTER_CENTER,
+                                format!("Sentence {sent_nr}"),
+                                FontId::proportional(14.0),
+                                Color32::WHITE,
+                            );
                         }
                     }
                 });
+                ui.add_space(30.0);
             });
 
             ui.add_space(16.0);
