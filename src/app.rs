@@ -9,7 +9,7 @@ pub struct AnnatomicApp {
 impl Default for AnnatomicApp {
     fn default() -> Self {
         Self {
-            main_view: MainView::ListCorpora { selected: None },
+            main_view: MainView::default(),
         }
     }
 }
@@ -57,7 +57,9 @@ impl eframe::App for AnnatomicApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.main_view = self.main_view.show(ui);
+            if let Some(new_view) = self.main_view.show(ui) {
+                self.main_view = new_view;
+            }
         });
     }
 }
