@@ -1,22 +1,15 @@
-use egui::{Align2, Color32, FontId, RichText, Rounding, Vec2};
+use crate::views::MainView;
 
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
+#[serde(default)]
 pub struct AnnatomicApp {
-    // Example stuff:
-    label: String,
-
-    #[serde(skip)] // This how you opt-out of serialization of a field
-    value: f32,
+    main_view: MainView,
 }
 
 impl Default for AnnatomicApp {
     fn default() -> Self {
         Self {
-            // Example stuff:
-            label: "Hello World!".to_owned(),
-            value: 2.7,
+            main_view: MainView::ListCorpora { selected: None },
         }
     }
 }
@@ -37,22 +30,6 @@ impl AnnatomicApp {
     }
 }
 
-const NUMBER_OF_SENTENCES: usize = 5_000;
-
-const EXAMPLE_SENTENCE: [&str; 11] = [
-    "Is",
-    "this",
-    "example",
-    "more",
-    "complicated",
-    "than",
-    "it",
-    "needs",
-    "to",
-    "be",
-    "?",
-];
-
 impl eframe::App for AnnatomicApp {
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
@@ -68,85 +45,19 @@ impl eframe::App for AnnatomicApp {
             // The top panel is often a good place for a menu bar:
 
             egui::menu::bar(ui, |ui| {
-                // NOTE: no File->Quit on web pages!
-                let is_web = cfg!(target_arch = "wasm32");
-                if !is_web {
-                    ui.menu_button("File", |ui| {
-                        if ui.button("Quit").clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
-                    ui.add_space(16.0);
-                }
+                ui.menu_button("File", |ui| {
+                    if ui.button("Quit").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
+                ui.add_space(16.0);
 
                 egui::widgets::global_theme_preference_buttons(ui);
             });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("Annatomic Token demo");
-
-            egui::ScrollArea::horizontal().show(ui, |ui| {
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    for sent_nr in 0..NUMBER_OF_SENTENCES {
-                        let mut sentence_rectangle = None;
-                        let mut layer2_rectangle = None;
-                        for (idx, t) in EXAMPLE_SENTENCE.iter().enumerate() {
-                            let token_rect = ui
-                                .label(RichText::new(*t).font(FontId::proportional(14.0)))
-                                .rect
-                                .translate(Vec2::new(0.0, 20.0));
-
-                            sentence_rectangle = Some(
-                                sentence_rectangle
-                                    .get_or_insert_with(|| token_rect)
-                                    .union(token_rect),
-                            );
-                            if idx > 2 && idx < 8 {
-                                let offset = token_rect.translate(Vec2::new(0.0, 25.0));
-                                layer2_rectangle = Some(
-                                    layer2_rectangle.get_or_insert_with(|| offset).union(offset),
-                                );
-                            }
-                        }
-                        if let Some(sentence_rectangle) = sentence_rectangle {
-                            ui.painter().rect_filled(
-                                sentence_rectangle,
-                                Rounding::ZERO,
-                                Color32::DARK_GRAY,
-                            );
-
-                            ui.painter().text(
-                                sentence_rectangle.center(),
-                                Align2::CENTER_CENTER,
-                                format!("Sentence {sent_nr}"),
-                                FontId::proportional(14.0),
-                                Color32::WHITE,
-                            );
-                        }
-                        if let Some(layer2_rectangle) = layer2_rectangle {
-                            ui.painter().rect_filled(
-                                layer2_rectangle,
-                                Rounding::ZERO,
-                                Color32::DARK_GRAY,
-                            );
-
-                            ui.painter().text(
-                                layer2_rectangle.center(),
-                                Align2::CENTER_CENTER,
-                                format!("Layer 2 - {sent_nr}"),
-                                FontId::proportional(14.0),
-                                Color32::WHITE,
-                            );
-                        }
-                    }
-                });
-                ui.add_space(80.0);
-            });
-
-            ui.add_space(16.0);
+            self.main_view = self.main_view.show(ui);
         });
     }
 }
