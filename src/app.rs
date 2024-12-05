@@ -1,4 +1,10 @@
-use crate::views::MainView;
+mod views;
+/// Which main view to show in the app
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
+pub(crate) enum MainView {
+    SelectCorpus,
+    Demo,
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
@@ -9,7 +15,7 @@ pub struct AnnatomicApp {
 impl Default for AnnatomicApp {
     fn default() -> Self {
         Self {
-            main_view: MainView::default(),
+            main_view: MainView::SelectCorpus,
         }
     }
 }
@@ -56,10 +62,9 @@ impl eframe::App for AnnatomicApp {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(new_view) = self.main_view.show(ui) {
-                self.main_view = new_view;
-            }
+        egui::CentralPanel::default().show(ctx, |ui| match self.main_view {
+            MainView::SelectCorpus => views::select_corpus(ui, self),
+            MainView::Demo => views::demo(ui, self),
         });
     }
 }
