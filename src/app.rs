@@ -49,7 +49,7 @@ impl AnnatomicApp {
     }
 
     fn get_corpus_storage(&mut self) -> anyhow::Result<&CorpusStorage> {
-       self.ensure_corpus_storage_loaded()?;
+        self.ensure_corpus_storage_loaded()?;
         let cs = self
             .corpus_storage
             .as_ref()
@@ -85,8 +85,8 @@ impl eframe::App for AnnatomicApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| match self.main_view {
-            MainView::SelectCorpus => views::select_corpus(ui, self),
-            MainView::Demo => views::demo(ui, self),
+            MainView::SelectCorpus => views::select_corpus::show(ui, self),
+            MainView::Demo => views::demo::show(ui, self),
         });
     }
 }
