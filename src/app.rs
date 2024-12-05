@@ -17,6 +17,7 @@ pub(crate) enum MainView {
 #[serde(default)]
 pub struct AnnatomicApp {
     main_view: MainView,
+    selected_corpus: Option<String>,
     #[serde(skip)]
     corpus_storage: Option<CorpusStorage>,
 }
@@ -36,7 +37,7 @@ impl AnnatomicApp {
         Default::default()
     }
 
-    fn get_corpus_storage(&mut self) -> anyhow::Result<&CorpusStorage> {
+    fn ensure_corpus_storage_loaded(&mut self) -> anyhow::Result<()> {
         if self.corpus_storage.is_none() {
             let parent_path =
                 eframe::storage_dir(APP_ID).context("Unable to get local file storage path")?;
@@ -44,6 +45,11 @@ impl AnnatomicApp {
             let cs = CorpusStorage::with_auto_cache_size(&parent_path.join("db"), true)?;
             self.corpus_storage = Some(cs);
         }
+        Ok(())
+    }
+
+    fn get_corpus_storage(&mut self) -> anyhow::Result<&CorpusStorage> {
+       self.ensure_corpus_storage_loaded()?;
         let cs = self
             .corpus_storage
             .as_ref()
