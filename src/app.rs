@@ -1,23 +1,24 @@
+use anyhow::Context;
+use graphannis::CorpusStorage;
+
 mod views;
+
+pub(crate) const APP_ID: &str = "annatomic";
+
 /// Which main view to show in the app
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
 pub(crate) enum MainView {
+    #[default]
     SelectCorpus,
     Demo,
 }
 
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct AnnatomicApp {
     main_view: MainView,
-}
-
-impl Default for AnnatomicApp {
-    fn default() -> Self {
-        Self {
-            main_view: MainView::SelectCorpus,
-        }
-    }
+    #[serde(skip)]
+    corpus_storage: Option<CorpusStorage>,
 }
 
 impl AnnatomicApp {
@@ -33,6 +34,21 @@ impl AnnatomicApp {
         }
 
         Default::default()
+    }
+
+    fn get_corpus_storage(&mut self) -> anyhow::Result<&CorpusStorage> {
+        if self.corpus_storage.is_none() {
+            let parent_path =
+                eframe::storage_dir(APP_ID).context("Unable to get local file storage path")?;
+            // Attempt to create a corpus storage and remember it
+            let cs = CorpusStorage::with_auto_cache_size(&parent_path.join("db"), true)?;
+            self.corpus_storage = Some(cs);
+        }
+        let cs = self
+            .corpus_storage
+            .as_ref()
+            .context("Missing corpus storage")?;
+        Ok(cs)
     }
 }
 
