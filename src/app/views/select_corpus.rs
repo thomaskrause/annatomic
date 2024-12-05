@@ -1,6 +1,6 @@
 use crate::{app::MainView, AnnatomicApp};
 use anyhow::{Context, Result};
-use egui::Ui;
+use egui::{TextEdit, Ui};
 use egui_notify::Toast;
 
 pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
@@ -34,14 +34,24 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         });
         ui.separator();
         ui.vertical(|ui| {
-            ui.heading("Create new corpus");
-            ui.text_edit_singleline(&mut app.new_corpus_name);
+            let heading = ui.heading("Create new corpus");
+            let edit = TextEdit::singleline(&mut app.new_corpus_name)
+                .hint_text("Corpus name")
+                .desired_width(heading.rect.width());
+            ui.add(edit);
             if ui.button("Add").clicked() {
                 if app.new_corpus_name.is_empty() {
                     app.messages
                         .add(Toast::warning("Empty corpus name not allowed"));
                 } else if let Err(e) = cs.create_empty_corpus(&app.new_corpus_name, false) {
                     app.messages.add(Toast::error(format!("{e}")));
+                } else {
+                    app.messages.add(Toast::info(format!(
+                        "Corpus \"{}\" added",
+                        &app.new_corpus_name
+                    )));
+                    app.selected_corpus = Some(app.new_corpus_name.to_string());
+                    app.new_corpus_name = String::new();
                 }
             }
         });
