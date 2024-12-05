@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use egui::{Color32, RichText};
+use egui::{mutex::Mutex, Color32, RichText};
 use egui_modal::Modal;
 use egui_notify::Toasts;
 use graphannis::CorpusStorage;
+use log::error;
 use views::select_corpus::CorpusSelection;
 
 mod views;
@@ -25,6 +26,8 @@ pub struct AnnatomicApp {
     main_view: MainView,
     corpus_selection: CorpusSelection,
     new_corpus_name: String,
+    #[serde(skip)]
+    job_in_progress: Arc<Mutex<Option<String>>>,
     #[serde(skip)]
     messages: Toasts,
     #[serde(skip)]
@@ -60,20 +63,9 @@ impl AnnatomicApp {
         }
         Ok(())
     }
-}
 
-impl eframe::App for AnnatomicApp {
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
-    }
-
-    /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
-        let modal = Modal::new(ctx, "confirmation");
+    fn handle_corpus_confirmation_dialog(&mut self, ctx: &egui::Context) {
+        let modal = Modal::new(ctx, "corpus_deletion_confirmation");
         if modal.is_open() {
             modal.show(|ui| {
                 let corpus_name = self
@@ -108,6 +100,19 @@ impl eframe::App for AnnatomicApp {
                         )
                         .clicked()
                     {
+                        if let Some(cs) = self.corpus_storage.as_ref().cloned() {
+                            let mut job = self.job_in_progress.lock();
+                            job.replace(format!("Deleting corpus \"{corpus_name}\""));
+                            let job_in_progress = self.job_in_progress.clone();
+                            rayon::spawn(move || {
+                                if let Err(e) = cs.delete(&corpus_name) {
+                                    error!("{e}")
+                                }
+
+                                let mut job_descr = job_in_progress.lock();
+                                *job_descr = None;
+                            });
+                        }
                         self.corpus_selection.scheduled_for_deletion = None;
                         modal.close();
                     }
@@ -117,6 +122,21 @@ impl eframe::App for AnnatomicApp {
         if self.corpus_selection.scheduled_for_deletion.is_some() {
             modal.open();
         }
+    }
+}
+
+impl eframe::App for AnnatomicApp {
+    /// Called by the frame work to save state before shutdown.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, self);
+    }
+
+    /// Called each time the UI needs repainting, which may be many times per second.
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
+        // For inspiration and more examples, go to https://emilk.github.io/egui
+
+        self.handle_corpus_confirmation_dialog(ctx);
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
@@ -134,10 +154,23 @@ impl eframe::App for AnnatomicApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.messages.show(ctx);
-            match self.main_view {
-                MainView::SelectCorpus => views::select_corpus::show(ui, self),
-                MainView::Demo => views::demo::show(ui, self),
+            let job_desc = self.job_in_progress.lock().clone();
+            if let Some(job_desc) = job_desc {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.heading(job_desc);
+                });
+                ui.label("Please wait for the background job to finish");
+            } else {
+                self.messages.show(ctx);
+                let response = match self.main_view {
+                    MainView::SelectCorpus => views::select_corpus::show(ui, self),
+                    MainView::Demo => views::demo::show(ui, self),
+                };
+                if let Err(e) = response {
+                    self.messages.error(format!("{e}"));
+                    error!("{e}");
+                }
             }
         });
     }
