@@ -1,28 +1,35 @@
 [package]
-name = "annatomic"
-version = "0.1.0"
 authors = ["Thomas Krause <thomas.krause@hu-berlin.de>"]
 edition = "2021"
 include = ["LICENSE-APACHE", "**/*.rs", "Cargo.toml"]
+name = "annatomic"
 rust-version = "1.76"
+version = "0.1.0"
 
 [package.metadata.docs.rs]
 all-features = true
 targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
 [dependencies]
+eframe = {version = "0.29", default-features = false, features = [
+  "accesskit", # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
+  "default_fonts", # Embed the default egui fonts.
+  "glow", # Use the glow rendering backend. Alternative: "wgpu".
+  "persistence", # Enable restoring app state when restarting the app.
+]}
 egui = "0.29"
-eframe = { version = "0.29", default-features = false, features = [
-    "accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
-    "default_fonts", # Embed the default egui fonts.
-    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
-    "persistence",   # Enable restoring app state when restarting the app.
-] }
 log = "0.4"
 
 # You only need serde if you want app persistence:
-serde = { version = "1", features = ["derive"] }
 anyhow = "1.0.94"
+graphannis = "3.5.1"
+serde = {version = "1", features = ["derive"]}
+
+# Compile some of the dependencies in release mode if when we are ourself in
+# "dev" mode (like building debug binaries or running tests)
+[profile.dev.package]
+graphannis-core.opt-level = 3
+graphannis.opt-level = 3
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -30,7 +37,7 @@ env_logger = "0.11"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen-futures = "0.4"
+wasm-bindgen-futures = "0.4" 
 web-sys = "0.3.70" # to access the DOM (to hide the loading text)
 
 [profile.release]
@@ -39,7 +46,6 @@ opt-level = 2 # fast and small wasm
 # Optimize all dependencies even in debug builds:
 [profile.dev.package."*"]
 opt-level = 2
-
 
 [patch.crates-io]
 

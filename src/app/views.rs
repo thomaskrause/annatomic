@@ -27,6 +27,15 @@ pub(crate) fn select_corpus(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     if ui.button("Span demo").clicked() {
         app.main_view = MainView::Demo;
     }
+    let cs = app.get_corpus_storage()?;
+    let corpora = cs.list()?;
+
+    ui.vertical(|ui| {
+        for c in corpora {
+            ui.label(&c.name);
+        }
+    });
+
     Ok(())
 }
 
