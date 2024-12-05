@@ -1,4 +1,5 @@
-use anyhow::Context;
+use anyhow::{Context, Result};
+use egui_notify::Toasts;
 use graphannis::CorpusStorage;
 
 mod views;
@@ -17,24 +18,31 @@ pub(crate) enum MainView {
 #[serde(default)]
 pub struct AnnatomicApp {
     main_view: MainView,
+    #[serde(skip)]
+    messages: Toasts,
     selected_corpus: Option<String>,
+    new_corpus_name: String,
     #[serde(skip)]
     corpus_storage: Option<CorpusStorage>,
 }
 
 impl AnnatomicApp {
     /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            app.ensure_corpus_storage_loaded()?;
+            return Ok(app);
         }
 
-        Default::default()
+        let mut app = Self::default();
+        app.ensure_corpus_storage_loaded()?;
+        Ok(app)
     }
 
     fn ensure_corpus_storage_loaded(&mut self) -> anyhow::Result<()> {
@@ -46,15 +54,6 @@ impl AnnatomicApp {
             self.corpus_storage = Some(cs);
         }
         Ok(())
-    }
-
-    fn get_corpus_storage(&mut self) -> anyhow::Result<&CorpusStorage> {
-        self.ensure_corpus_storage_loaded()?;
-        let cs = self
-            .corpus_storage
-            .as_ref()
-            .context("Missing corpus storage")?;
-        Ok(cs)
     }
 }
 
@@ -84,9 +83,12 @@ impl eframe::App for AnnatomicApp {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| match self.main_view {
-            MainView::SelectCorpus => views::select_corpus::show(ui, self),
-            MainView::Demo => views::demo::show(ui, self),
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.messages.show(ctx);
+            match self.main_view {
+                MainView::SelectCorpus => views::select_corpus::show(ui, self),
+                MainView::Demo => views::demo::show(ui, self),
+            }
         });
     }
 }

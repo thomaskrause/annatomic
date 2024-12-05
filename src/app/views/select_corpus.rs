@@ -1,9 +1,13 @@
 use crate::{app::MainView, AnnatomicApp};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use egui::Ui;
+use egui_notify::Toast;
 
 pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
-    let cs = app.get_corpus_storage()?;
+    let cs = app
+        .corpus_storage
+        .as_ref()
+        .context("Missing corpus storage")?;
     let corpora = cs.list()?;
 
     ui.horizontal(|ui| {
@@ -31,7 +35,15 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         ui.separator();
         ui.vertical(|ui| {
             ui.heading("Create new corpus");
-            ui.label("TODO");
+            ui.text_edit_singleline(&mut app.new_corpus_name);
+            if ui.button("Add").clicked() {
+                if app.new_corpus_name.is_empty() {
+                    app.messages
+                        .add(Toast::warning("Empty corpus name not allowed"));
+                } else if let Err(e) = cs.create_empty_corpus(&app.new_corpus_name, false) {
+                    app.messages.add(Toast::error(format!("{e}")));
+                }
+            }
         });
         ui.separator();
         ui.vertical(|ui| {
