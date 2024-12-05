@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use egui_notify::Toasts;
 use graphannis::CorpusStorage;
@@ -23,7 +25,7 @@ pub struct AnnatomicApp {
     selected_corpus: Option<String>,
     new_corpus_name: String,
     #[serde(skip)]
-    corpus_storage: Option<CorpusStorage>,
+    corpus_storage: Option<Arc<CorpusStorage>>,
 }
 
 impl AnnatomicApp {
@@ -51,7 +53,7 @@ impl AnnatomicApp {
                 eframe::storage_dir(APP_ID).context("Unable to get local file storage path")?;
             // Attempt to create a corpus storage and remember it
             let cs = CorpusStorage::with_auto_cache_size(&parent_path.join("db"), true)?;
-            self.corpus_storage = Some(cs);
+            self.corpus_storage = Some(Arc::new(cs));
         }
         Ok(())
     }
