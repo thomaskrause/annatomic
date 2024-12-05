@@ -6,6 +6,13 @@ use egui::{TextEdit, Ui};
 use egui_notify::Toast;
 use graphannis::{corpusstorage::CorpusInfo, CorpusStorage};
 
+#[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
+
+pub(crate) struct CorpusSelection {
+    pub(crate) name: Option<String>,
+    pub(crate) scheduled_for_deletion: Option<String>,
+}
+
 pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     let cs = app
         .corpus_storage
@@ -32,16 +39,23 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
         egui::ScrollArea::vertical().show(ui, |ui| {
             for c in corpora {
                 let is_selected = app
-                    .selected_corpus
+                    .corpus_selection
+                    .name
                     .as_ref()
                     .is_some_and(|selected_corpus| selected_corpus == &c.name);
-                if ui.selectable_label(is_selected, &c.name).clicked() {
+                let label = ui.selectable_label(is_selected, &c.name);
+                label.context_menu(|ui| {
+                    if ui.button("Delete").clicked() {
+                        app.corpus_selection.scheduled_for_deletion = Some(c.name.clone());
+                    }
+                });
+                if label.clicked() {
                     if is_selected {
                         // Unselect the current corpus
-                        app.selected_corpus = None;
+                        app.corpus_selection.name = None;
                     } else {
                         // Select this corpus
-                        app.selected_corpus = Some(c.name.clone());
+                        app.corpus_selection.name = Some(c.name.clone());
                     }
                 }
             }
@@ -67,7 +81,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>
                     "Corpus \"{}\" added",
                     &app.new_corpus_name
                 )));
-                app.selected_corpus = Some(app.new_corpus_name.to_string());
+                app.corpus_selection.name = Some(app.new_corpus_name.to_string());
                 app.new_corpus_name = String::new();
             }
         }
