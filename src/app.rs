@@ -6,7 +6,7 @@ use egui_modal::Modal;
 use egui_notify::Toasts;
 use graphannis::CorpusStorage;
 use log::error;
-use views::select_corpus::CorpusSelection;
+use views::start::CorpusSelection;
 
 mod views;
 
@@ -16,8 +16,44 @@ pub(crate) const APP_ID: &str = "annatomic";
 #[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
 pub(crate) enum MainView {
     #[default]
-    SelectCorpus,
+    Start,
     Demo,
+}
+
+#[derive(Clone)]
+struct FgJob {
+    title: String,
+    msg: Option<String>,
+    error_msg: Option<String>,
+}
+
+impl FgJob {
+    fn new<S>(title: S) -> Self
+    where
+        S: Into<String>,
+    {
+        Self {
+            title: title.into(),
+            msg: None,
+            error_msg: None,
+        }
+    }
+
+    fn msg<S>(mut self, msg: S) -> Self
+    where
+        S: Into<String>,
+    {
+        self.msg = Some(msg.into());
+        self
+    }
+
+    fn error_msg<S>(mut self, msg: S) -> Self
+    where
+        S: Into<String>,
+    {
+        self.error_msg = Some(msg.into());
+        self
+    }
 }
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
@@ -27,7 +63,7 @@ pub struct AnnatomicApp {
     corpus_selection: CorpusSelection,
     new_corpus_name: String,
     #[serde(skip)]
-    job_in_progress: Arc<Mutex<Option<String>>>,
+    job_in_progress: Arc<Mutex<Option<FgJob>>>,
     #[serde(skip)]
     messages: Toasts,
     #[serde(skip)]
@@ -102,7 +138,7 @@ impl AnnatomicApp {
                     {
                         if let Some(cs) = self.corpus_storage.as_ref().cloned() {
                             let mut job = self.job_in_progress.lock();
-                            job.replace(format!("Deleting corpus \"{corpus_name}\""));
+                            job.replace(FgJob::new(format!("Deleting corpus \"{corpus_name}\"")));
                             let job_in_progress = self.job_in_progress.clone();
                             rayon::spawn(move || {
                                 if let Err(e) = cs.delete(&corpus_name) {
@@ -154,23 +190,38 @@ impl eframe::App for AnnatomicApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            let mut remove_job = false;
             let job_desc = self.job_in_progress.lock().clone();
             if let Some(job_desc) = job_desc {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.heading(job_desc);
+                    ui.heading(&job_desc.title);
                 });
-                ui.label("Please wait for the background job to finish");
+                if let Some(msg) = &job_desc.msg {
+                    ui.label(msg);
+                } else {
+                    ui.label("Please wait for the background job to finish");
+                }
+
+                if let Some(error_msg) = &job_desc.error_msg {
+                    remove_job = true;
+                    self.messages.error(error_msg);
+                }
             } else {
                 self.messages.show(ctx);
                 let response = match self.main_view {
-                    MainView::SelectCorpus => views::select_corpus::show(ui, self),
+                    MainView::Start => views::start::show(ui, self),
                     MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {
                     self.messages.error(format!("{e}"));
                     error!("{e}");
                 }
+            }
+
+            if remove_job {
+                let mut job_in_progress = self.job_in_progress.lock();
+                *job_in_progress = None;
             }
         });
     }
