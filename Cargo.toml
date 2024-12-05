@@ -26,6 +26,7 @@ graphannis = "3.5.1"
 serde = {version = "1", features = ["derive"]}
 egui-notify = "0.17.0"
 egui-modal = "0.5.0"
+rayon = "1.10.0"
 
 # Compile some of the dependencies in release mode if when we are ourself in
 # "dev" mode (like building debug binaries or running tests)
