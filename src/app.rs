@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use egui::{Color32, RichText};
+use egui_modal::Modal;
 use egui_notify::Toasts;
 use graphannis::CorpusStorage;
+use views::select_corpus::CorpusSelection;
 
 mod views;
 
@@ -20,10 +23,10 @@ pub(crate) enum MainView {
 #[serde(default)]
 pub struct AnnatomicApp {
     main_view: MainView,
+    corpus_selection: CorpusSelection,
+    new_corpus_name: String,
     #[serde(skip)]
     messages: Toasts,
-    selected_corpus: Option<String>,
-    new_corpus_name: String,
     #[serde(skip)]
     corpus_storage: Option<Arc<CorpusStorage>>,
 }
@@ -69,6 +72,51 @@ impl eframe::App for AnnatomicApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
+
+        let modal = Modal::new(ctx, "confirmation");
+        if modal.is_open() {
+            modal.show(|ui| {
+                let corpus_name = self
+                    .corpus_selection
+                    .scheduled_for_deletion
+                    .clone()
+                    .unwrap_or_default();
+                modal.title(ui, format!("Confirm deletion of \"{corpus_name}\""));
+                modal.frame(ui, |ui| {
+                    modal.body_and_icon(
+                        ui,
+                        "Are you sure to delete the corpus permanently?",
+                        egui_modal::Icon::Warning,
+                    );
+                });
+                modal.buttons(ui, |ui| {
+                    if modal
+                        .button(
+                            ui,
+                            RichText::new("Do not delete the corpus.").color(Color32::BLUE),
+                        )
+                        .clicked()
+                    {
+                        self.corpus_selection.scheduled_for_deletion = None;
+                        modal.close();
+                    }
+                    if modal
+                        .button(
+                            ui,
+                            RichText::new(format!("Delete \"{corpus_name}\" permanently"))
+                                .color(Color32::RED),
+                        )
+                        .clicked()
+                    {
+                        self.corpus_selection.scheduled_for_deletion = None;
+                        modal.close();
+                    }
+                });
+            });
+        }
+        if self.corpus_selection.scheduled_for_deletion.is_some() {
+            modal.open();
+        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
