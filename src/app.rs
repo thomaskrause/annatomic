@@ -168,7 +168,7 @@ impl eframe::App for AnnatomicApp {
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
@@ -184,6 +184,10 @@ impl eframe::App for AnnatomicApp {
                     }
                 });
                 ui.add_space(16.0);
+                if let Some(seconds) = frame.info().cpu_usage {
+                    ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
+                    ui.add_space(16.0);
+                }
 
                 egui::widgets::global_theme_preference_buttons(ui);
             });
