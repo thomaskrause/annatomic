@@ -1,13 +1,18 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     app::{FgJob, MainView},
     AnnatomicApp,
 };
 use anyhow::{Context, Result};
-use egui::{TextEdit, Ui};
+use egui::{ScrollArea, TextEdit, Ui};
 use egui_notify::Toast;
-use graphannis::{corpusstorage::CorpusInfo, CorpusStorage};
+use graphannis::{
+    corpusstorage::CorpusInfo,
+    graph::AnnoKey,
+    model::{AnnotationComponent, AnnotationComponentType::PartOf},
+    CorpusStorage,
+};
 use log::error;
 use rfd::FileDialog;
 
@@ -35,6 +40,8 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         ui.separator();
         demo_link(ui, app);
     });
+    ui.separator();
+    corpus_structure(ui, app, cs.clone())?;
 
     Ok(())
 }
@@ -141,4 +148,43 @@ fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
             app.main_view = MainView::Demo
         }
     });
+}
+
+fn corpus_structure(
+    ui: &mut Ui,
+    app: &mut AnnatomicApp,
+    cs: Arc<CorpusStorage>,
+) -> anyhow::Result<()> {
+    ui.heading("Corpus editor");
+    if let Some(corpus_name) = app.corpus_selection.name.clone() {
+        let mut corpus_graph = cs.corpus_graph(&corpus_name)?;
+        corpus_graph.ensure_loaded_all()?;
+        if let Some(partof) = corpus_graph.get_graphstorage(&AnnotationComponent::new(
+            PartOf,
+            "annis".into(),
+            "".into(),
+        )) {
+            let mut documents = Vec::new();
+            for n in partof.root_nodes() {
+                let n = n?;
+                let node_name = corpus_graph.get_node_annos().get_value_for_item(
+                    &n,
+                    &AnnoKey {
+                        name: "node_name".into(),
+                        ns: "annis".into(),
+                    },
+                )?;
+                documents.push(node_name.unwrap_or_else(|| Cow::Borrowed("<UNKNOWN>")));
+            }
+            documents.sort();
+            ScrollArea::vertical().show(ui, |ui| {
+                for d in documents {
+                    ui.label(d);
+                }
+            });
+        }
+    } else {
+        ui.label("Select a corpus to edit it.");
+    }
+    Ok(())
 }
