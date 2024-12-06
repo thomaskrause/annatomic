@@ -31,7 +31,7 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         .clone();
     let corpora = cs.list()?;
 
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         corpus_selection(ui, app, &corpora);
         ui.separator();
         import_corpus(ui, app, cs.clone());
