@@ -174,7 +174,7 @@ fn corpus_structure(
                         ns: "annis".into(),
                     },
                 )?;
-                documents.push(node_name.unwrap_or_else(|| Cow::Borrowed("<UNKNOWN>")));
+                documents.push(node_name.unwrap_or(Cow::Borrowed("<UNKNOWN>")));
             }
             documents.sort();
             ScrollArea::vertical().show(ui, |ui| {
