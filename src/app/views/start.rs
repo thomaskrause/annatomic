@@ -1,19 +1,12 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
-use crate::{
-    app::{FgJob, MainView},
-    AnnatomicApp,
-};
-use anyhow::{Context, Result};
+use crate::{app::MainView, AnnatomicApp};
+use anyhow::{Context, Ok, Result};
 use egui::{ScrollArea, TextEdit, Ui};
 use egui_notify::Toast;
-use graphannis::{
-    corpusstorage::CorpusInfo,
-    graph::AnnoKey,
-    model::{AnnotationComponent, AnnotationComponentType::PartOf},
-    CorpusStorage,
-};
+use graphannis::{corpusstorage::CorpusInfo, CorpusStorage};
 use log::error;
+
 use rfd::FileDialog;
 
 #[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
@@ -32,7 +25,10 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     let corpora = cs.list()?;
 
     ui.horizontal_wrapped(|ui| {
-        corpus_selection(ui, app, &corpora);
+        if let Err(e) = corpus_selection(ui, app, &corpora) {
+            app.messages.error(e.to_string());
+            error!("{e}");
+        }
         ui.separator();
         import_corpus(ui, app, cs.clone());
         ui.separator();
@@ -41,12 +37,12 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         demo_link(ui, app);
     });
     ui.separator();
-    corpus_structure(ui, app, cs.clone())?;
+    corpus_structure(ui, app)?;
 
     Ok(())
 }
 
-fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo]) {
+fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo]) -> Result<()> {
     ui.vertical(|ui| {
         ui.heading("Select");
 
@@ -70,11 +66,14 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
                     } else {
                         // Select this corpus
                         app.corpus_selection.name = Some(c.name.clone());
+
+                        app.schedule_corpus_tree_update();
                     }
                 }
             }
         });
     });
+    Ok(())
 }
 
 fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
@@ -86,31 +85,26 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
                 .add_filter("Zipped GraphML (*.zip)", &["zip"]);
             if let Some(path) = dlg.pick_file() {
                 let job_title = format!("Importing {}", path.to_string_lossy());
-                {
-                    let mut job_desc = app.job_in_progress.lock();
-                    *job_desc = Some(FgJob::new(&job_title));
-                }
-                let cloned_job_desc = app.job_in_progress.clone();
-                rayon::spawn(move || {
-                    let result = cs.import_from_fs(
-                        &path,
-                        graphannis::corpusstorage::ImportFormat::GraphML,
-                        None,
-                        false,
-                        false,
-                        |msg| {
-                            let mut job_desc = cloned_job_desc.lock();
-                            *job_desc = Some(FgJob::new(&job_title).msg(msg));
-                        },
-                    );
-                    let mut job_desc = cloned_job_desc.lock();
-                    if let Err(e) = result {
-                        error!("{e}");
-                        job_desc.replace(FgJob::new(&job_title).error_msg(e.to_string()));
-                    } else {
-                        *job_desc = None;
-                    }
-                });
+                app.jobs.add(
+                    &job_title,
+                    move |job| {
+                        let name = cs.import_from_fs(
+                            &path,
+                            graphannis::corpusstorage::ImportFormat::GraphML,
+                            None,
+                            false,
+                            false,
+                            |msg| {
+                                job.update_message(msg);
+                            },
+                        )?;
+                        Ok(name)
+                    },
+                    |result, app| {
+                        app.corpus_selection.name = Some(result);
+                        app.schedule_corpus_tree_update();
+                    },
+                );
             }
         }
     });
@@ -136,6 +130,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>
                 )));
                 app.corpus_selection.name = Some(app.new_corpus_name.to_string());
                 app.new_corpus_name = String::new();
+                app.schedule_corpus_tree_update();
             }
         }
     });
@@ -150,39 +145,16 @@ fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
     });
 }
 
-fn corpus_structure(
-    ui: &mut Ui,
-    app: &mut AnnatomicApp,
-    cs: Arc<CorpusStorage>,
-) -> anyhow::Result<()> {
+fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) -> anyhow::Result<()> {
     ui.heading("Corpus editor");
-    if let Some(corpus_name) = app.corpus_selection.name.clone() {
-        let mut corpus_graph = cs.corpus_graph(&corpus_name)?;
-        corpus_graph.ensure_loaded_all()?;
-        if let Some(partof) = corpus_graph.get_graphstorage(&AnnotationComponent::new(
-            PartOf,
-            "annis".into(),
-            "".into(),
-        )) {
-            let mut documents = Vec::new();
-            for n in partof.root_nodes() {
-                let n = n?;
-                let node_name = corpus_graph.get_node_annos().get_value_for_item(
-                    &n,
-                    &AnnoKey {
-                        name: "node_name".into(),
-                        ns: "annis".into(),
-                    },
-                )?;
-                documents.push(node_name.unwrap_or(Cow::Borrowed("<UNKNOWN>")));
+    if app.corpus_selection.name.is_some() {
+        ScrollArea::vertical().show(ui, |ui| {
+            for child_corpus in &app.corpus_tree.children {
+                ui.collapsing(&child_corpus.node_name, |ui| {
+                    ui.collapsing("TODO", |ui| ui.label("MORE TODO"))
+                });
             }
-            documents.sort();
-            ScrollArea::vertical().show(ui, |ui| {
-                for d in documents {
-                    ui.label(d);
-                }
-            });
-        }
+        });
     } else {
         ui.label("Select a corpus to edit it.");
     }

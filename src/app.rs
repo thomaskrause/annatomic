@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use egui::{mutex::Mutex, Color32, RichText};
+use corpus_tree::CorpusTree;
+use egui::{Color32, RichText};
 use egui_modal::Modal;
 use egui_notify::Toasts;
 use graphannis::CorpusStorage;
+use job_executor::JobExecutor;
 use log::error;
 use views::start::CorpusSelection;
 
+mod corpus_tree;
+mod job_executor;
 mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
@@ -20,50 +24,15 @@ pub(crate) enum MainView {
     Demo,
 }
 
-#[derive(Clone)]
-struct FgJob {
-    title: String,
-    msg: Option<String>,
-    error_msg: Option<String>,
-}
-
-impl FgJob {
-    fn new<S>(title: S) -> Self
-    where
-        S: Into<String>,
-    {
-        Self {
-            title: title.into(),
-            msg: None,
-            error_msg: None,
-        }
-    }
-
-    fn msg<S>(mut self, msg: S) -> Self
-    where
-        S: Into<String>,
-    {
-        self.msg = Some(msg.into());
-        self
-    }
-
-    fn error_msg<S>(mut self, msg: S) -> Self
-    where
-        S: Into<String>,
-    {
-        self.error_msg = Some(msg.into());
-        self
-    }
-}
-
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct AnnatomicApp {
     main_view: MainView,
     corpus_selection: CorpusSelection,
     new_corpus_name: String,
+    corpus_tree: CorpusTree,
     #[serde(skip)]
-    job_in_progress: Arc<Mutex<Option<FgJob>>>,
+    jobs: Arc<JobExecutor>,
     #[serde(skip)]
     messages: Toasts,
     #[serde(skip)]
@@ -86,18 +55,22 @@ impl AnnatomicApp {
 
         let mut app = Self::default();
         app.ensure_corpus_storage_loaded()?;
+
         Ok(app)
     }
 
-    fn ensure_corpus_storage_loaded(&mut self) -> anyhow::Result<()> {
-        if self.corpus_storage.is_none() {
+    fn ensure_corpus_storage_loaded(&mut self) -> anyhow::Result<Arc<CorpusStorage>> {
+        if let Some(cs) = &self.corpus_storage {
+            Ok(cs.clone())
+        } else {
             let parent_path =
                 eframe::storage_dir(APP_ID).context("Unable to get local file storage path")?;
             // Attempt to create a corpus storage and remember it
             let cs = CorpusStorage::with_auto_cache_size(&parent_path.join("db"), true)?;
-            self.corpus_storage = Some(Arc::new(cs));
+            let cs = Arc::new(cs);
+            self.corpus_storage = Some(cs.clone());
+            Ok(cs)
         }
-        Ok(())
     }
 
     fn handle_corpus_confirmation_dialog(&mut self, ctx: &egui::Context) {
@@ -137,17 +110,15 @@ impl AnnatomicApp {
                         .clicked()
                     {
                         if let Some(cs) = self.corpus_storage.as_ref().cloned() {
-                            let mut job = self.job_in_progress.lock();
-                            job.replace(FgJob::new(format!("Deleting corpus \"{corpus_name}\"")));
-                            let job_in_progress = self.job_in_progress.clone();
-                            rayon::spawn(move || {
-                                if let Err(e) = cs.delete(&corpus_name) {
-                                    error!("{e}")
-                                }
-
-                                let mut job_descr = job_in_progress.lock();
-                                *job_descr = None;
-                            });
+                            let title = format!("Deleting corpus \"{corpus_name}\"");
+                            self.jobs.add(
+                                &title,
+                                move |_job| {
+                                    cs.delete(&corpus_name)?;
+                                    Ok(())
+                                },
+                                |_result, _app| {},
+                            );
                         }
                         self.corpus_selection.scheduled_for_deletion = None;
                         modal.close();
@@ -157,6 +128,33 @@ impl AnnatomicApp {
         }
         if self.corpus_selection.scheduled_for_deletion.is_some() {
             modal.open();
+        }
+    }
+
+    fn schedule_corpus_tree_update(&mut self) {
+        match self.ensure_corpus_storage_loaded() {
+            Ok(cs) => {
+                if let Some(corpus_name) = self.corpus_selection.name.clone() {
+                    // Run a background job that creates the new corpus structure
+
+                    let job_title = format!("Updating corpus structure for {}", &corpus_name);
+                    self.jobs.add(
+                        &job_title,
+                        move |_job| {
+                            let corpus_tree =
+                                CorpusTree::create_from_graphstorage(cs, &corpus_name)?;
+                            Ok(corpus_tree)
+                        },
+                        |result, app| app.corpus_tree = result,
+                    );
+                } else {
+                    self.corpus_tree = CorpusTree::default();
+                }
+            }
+            Err(err) => {
+                self.messages.error(err.to_string());
+                error!("{err}");
+            }
         }
     }
 }
@@ -194,24 +192,8 @@ impl eframe::App for AnnatomicApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let mut remove_job = false;
-            let job_desc = self.job_in_progress.lock().clone();
-            if let Some(job_desc) = job_desc {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.heading(&job_desc.title);
-                });
-                if let Some(msg) = &job_desc.msg {
-                    ui.label(msg);
-                } else {
-                    ui.label("Please wait for the background job to finish");
-                }
-
-                if let Some(error_msg) = &job_desc.error_msg {
-                    remove_job = true;
-                    self.messages.error(error_msg);
-                }
-            } else {
+            let has_jobs = self.jobs.clone().show(ui, self);
+            if !has_jobs {
                 self.messages.show(ctx);
                 let response = match self.main_view {
                     MainView::Start => views::start::show(ui, self),
@@ -221,11 +203,6 @@ impl eframe::App for AnnatomicApp {
                     self.messages.error(format!("{e}"));
                     error!("{e}");
                 }
-            }
-
-            if remove_job {
-                let mut job_in_progress = self.job_in_progress.lock();
-                *job_in_progress = None;
             }
         });
     }
