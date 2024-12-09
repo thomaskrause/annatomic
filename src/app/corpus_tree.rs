@@ -53,7 +53,7 @@ impl CorpusTree {
         }
 
         let root = CorpusTree {
-            node_name: "".to_string(),
+            node_name: corpus_name.to_string(),
             annos: BTreeMap::new(),
             children,
         };

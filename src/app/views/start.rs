@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use crate::{app::MainView, AnnatomicApp};
+use crate::{
+    app::{CorpusTree, MainView},
+    AnnatomicApp,
+};
 use anyhow::{Context, Ok, Result};
-use egui::{ScrollArea, TextEdit, Ui};
+use egui::{CollapsingHeader, ScrollArea, TextEdit, Ui};
 use egui_notify::Toast;
 use graphannis::{corpusstorage::CorpusInfo, CorpusStorage};
 use log::error;
@@ -148,15 +151,23 @@ fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) -> anyhow::Result<()> {
     ui.heading("Corpus editor");
     if app.corpus_selection.name.is_some() {
-        ScrollArea::vertical().show(ui, |ui| {
-            for child_corpus in &app.corpus_tree.children {
-                ui.collapsing(&child_corpus.node_name, |ui| {
-                    ui.collapsing("TODO", |ui| ui.label("MORE TODO"))
-                });
-            }
-        });
+        ScrollArea::vertical().show(ui, |ui| recursive_corpus_structure(ui, &app.corpus_tree, 0));
     } else {
         ui.label("Select a corpus to edit it.");
     }
     Ok(())
+}
+
+fn recursive_corpus_structure(ui: &mut Ui, tree: &CorpusTree, level: usize) {
+    if tree.children.is_empty() {
+        if ui.selectable_label(false, &tree.node_name).clicked() {};
+    } else {
+        CollapsingHeader::new(&tree.node_name)
+            .default_open(level == 0)
+            .show(ui, |ui| {
+                for child_corpus in &tree.children {
+                    recursive_corpus_structure(ui, child_corpus, level + 1);
+                }
+            });
+    }
 }
