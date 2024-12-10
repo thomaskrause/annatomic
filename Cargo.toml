@@ -18,7 +18,9 @@ eframe = { version = "0.29", default-features = false, features = [
   "wayland",
 ] }
 egui = "0.29"
+egui_extras = { version = "0.29", features = ["image"] }
 log = "0.4"
+image = { version = "0.25", features = ["png"] }
 
 # You only need serde if you want app persistence:
 anyhow = "1.0.94"
