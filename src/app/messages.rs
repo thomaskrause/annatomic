@@ -51,9 +51,12 @@ impl Notifier {
                     Ok(msg) => {
                         messages.error(msg.to_string());
                     }
-                    Err(e) => {
-                        error!("Error trying to report internal error: {e}");
-                    }
+                    Err(e) => match e {
+                        std::sync::mpsc::TryRecvError::Empty => {}
+                        std::sync::mpsc::TryRecvError::Disconnected => {
+                            error!("Error notification channel disconnected")
+                        }
+                    },
                 }
                 messages.show(ctx);
             }

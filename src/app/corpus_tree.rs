@@ -9,7 +9,7 @@ use graphannis::{
 };
 use graphannis_core::graph::{
     storage::{adjacencylist::AdjacencyListStorage, prepost::PrePostOrderStorage},
-    NODE_NAME_KEY,
+    ANNIS_NS, NODE_NAME_KEY,
 };
 
 pub(crate) struct CorpusTree {
@@ -29,7 +29,11 @@ impl CorpusTree {
         let mut inverted_corpus_graph = AdjacencyListStorage::new();
 
         let partof = corpus_graph
-            .get_graphstorage(&AnnotationComponent::new(PartOf, "annis".into(), "".into()))
+            .get_or_create_writable(&AnnotationComponent::new(
+                PartOf,
+                ANNIS_NS.into(),
+                "".into(),
+            ))
             .context("Missing PartOf component")?;
         for source in partof.source_nodes() {
             let source = source?;
@@ -67,11 +71,11 @@ impl CorpusTree {
                     .default_open(true)
                     .show(ui, |ui| {
                         for root_node in root_nodes.iter() {
-                            self.recursive_corpus_structure(ui, root_node.clone(), 0)
+                            self.recursive_corpus_structure(ui, *root_node, 0)
                         }
                     });
             } else if let Some(root_node) = root_nodes.first() {
-                self.recursive_corpus_structure(ui, root_node.clone(), 0)
+                self.recursive_corpus_structure(ui, *root_node, 0)
             }
         });
 
@@ -97,7 +101,7 @@ impl CorpusTree {
                     .default_open(level == 0)
                     .show(ui, |ui| {
                         for child_corpus in &child_nodes {
-                            self.recursive_corpus_structure(ui, child_corpus.clone(), level + 1);
+                            self.recursive_corpus_structure(ui, *child_corpus, level + 1);
                         }
                     });
             }

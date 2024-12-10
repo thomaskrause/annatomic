@@ -4,7 +4,6 @@ use std::{
 };
 
 use egui::Ui;
-use log::error;
 
 use super::AnnatomicApp;
 
@@ -66,7 +65,6 @@ impl JobExecutor {
                     }
                 }
                 Err(err) => {
-                    error!("{err}");
                     if let Ok(mut failed_jobs) = failed_jobs.write() {
                         failed_jobs.insert(title.clone(), err);
                     }
