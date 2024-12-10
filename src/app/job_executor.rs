@@ -81,8 +81,7 @@ impl JobExecutor {
     pub(super) fn show(&self, ui: &mut Ui, app: &mut AnnatomicApp) -> bool {
         if let Ok(mut failed_jobs) = self.failed.write() {
             while let Some((_title, e)) = failed_jobs.pop_first() {
-                error!("{e}");
-                app.messages.error(e.to_string());
+                app.messages.handle_error(e);
             }
         }
         if let Ok(mut finished_jobs) = self.finished.write() {
