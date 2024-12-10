@@ -10,12 +10,13 @@ all-features = true
 targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
 [dependencies]
-eframe = {version = "0.29", default-features = false, features = [
-  "accesskit", # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
+eframe = { version = "0.29", default-features = false, features = [
+  "accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
   "default_fonts", # Embed the default egui fonts.
-  "glow", # Use the glow rendering backend. Alternative: "wgpu".
-  "persistence", # Enable restoring app state when restarting the app.
-]}
+  "glow",          # Use the glow rendering backend. Alternative: "wgpu".
+  "persistence",   # Enable restoring app state when restarting the app.
+  "wayland",
+] }
 egui = "0.29"
 log = "0.4"
 
@@ -27,7 +28,7 @@ graphannis = "3.5.1"
 graphannis-core = "3.5.1"
 rayon = "1.10.0"
 rfd = "0.15.1"
-serde = {version = "1", features = ["derive"]}
+serde = { version = "1", features = ["derive"] }
 crossbeam-queue = "0.3.11"
 
 # Compile some of the dependencies in release mode if when we are ourself in
@@ -42,8 +43,8 @@ env_logger = "0.11"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen-futures = "0.4" 
-web-sys = "0.3.70" # to access the DOM (to hide the loading text)
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3.70"           # to access the DOM (to hide the loading text)
 
 [profile.release]
 opt-level = 2 # fast and small wasm

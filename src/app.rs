@@ -192,7 +192,7 @@ impl eframe::App for AnnatomicApp {
                     ui.add_space(16.0);
                 }
 
-                egui::widgets::global_theme_preference_buttons(ui);
+                egui::widgets::global_theme_preference_switch(ui);
             });
         });
 
