@@ -22,17 +22,13 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         .context("Missing corpus storage")?
         .clone();
     let corpora = cs.list()?;
-
-    ui.horizontal_wrapped(|ui| {
-        if let Err(e) = corpus_selection(ui, app, &corpora) {
+    ui.columns_const(|[c1, c2, c3, c4]| {
+        if let Err(e) = corpus_selection(c1, app, &corpora) {
             app.notifier.handle_error(e);
         }
-        ui.separator();
-        import_corpus(ui, app, cs.clone());
-        ui.separator();
-        create_new_corpus(ui, app, cs.clone());
-        ui.separator();
-        demo_link(ui, app);
+        import_corpus(c2, app, cs.clone());
+        create_new_corpus(c3, app, cs.clone());
+        demo_link(c4, app);
     });
     ui.separator();
     corpus_structure(ui, app)?;
@@ -41,10 +37,10 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
 }
 
 fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo]) -> Result<()> {
-    ui.vertical(|ui| {
+    ui.vertical_centered(|ui| {
         ui.heading("Select");
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
             for c in corpora {
                 let is_selected = app
                     .corpus_selection
@@ -74,7 +70,7 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
 }
 
 fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
-    ui.vertical(|ui| {
+    ui.vertical_centered(|ui| {
         ui.heading("Import");
         if ui.button("Choose file...").clicked() {
             let dlg = FileDialog::new()
@@ -108,7 +104,7 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
 }
 
 fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
-    ui.vertical(|ui| {
+    ui.vertical_centered(|ui| {
         let heading = ui.heading("Create new");
         let edit = TextEdit::singleline(&mut app.new_corpus_name)
             .hint_text("Corpus name")
@@ -134,7 +130,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>
 }
 
 fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
-    ui.vertical(|ui| {
+    ui.vertical_centered(|ui| {
         ui.heading("Demo");
         if ui.link("Go to span demo").clicked() {
             app.main_view = MainView::Demo
