@@ -4,20 +4,19 @@ use anyhow::Context;
 use egui::{CollapsingHeader, ScrollArea, Ui};
 use egui_notify::Toast;
 use graphannis::{
-    graph::{Edge, EdgeContainer, GraphStorage, NodeID, WriteableGraphStorage},
+    graph::{Edge, NodeID, WriteableGraphStorage},
     model::{AnnotationComponent, AnnotationComponentType::PartOf},
     AnnotationGraph, CorpusStorage,
 };
 use graphannis_core::graph::{
-    storage::{adjacencylist::AdjacencyListStorage, prepost::PrePostOrderStorage},
-    ANNIS_NS, NODE_NAME_KEY,
+    storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY,
 };
 
 use super::Notifier;
 
 pub(crate) struct CorpusTree {
     pub(crate) selected_corpus_node: Option<NodeID>,
-    gs: Box<dyn GraphStorage>,
+    gs: Box<dyn WriteableGraphStorage>,
     corpus_graph: AnnotationGraph,
     notifier: Arc<Notifier>,
 }
@@ -50,24 +49,10 @@ impl CorpusTree {
             }
         }
         inverted_corpus_graph.calculate_statistics()?;
-        let gs: Box<dyn GraphStorage> = if let Some(stats) = inverted_corpus_graph.get_statistics()
-        {
-            if !stats.cyclic && stats.rooted_tree {
-                // Use an optimized implementation for trees
-                let mut optimized_corpus_graph = PrePostOrderStorage::<u64, u64>::new();
-                optimized_corpus_graph
-                    .copy(corpus_graph.get_node_annos(), &inverted_corpus_graph)?;
-                Box::new(optimized_corpus_graph)
-            } else {
-                Box::new(inverted_corpus_graph)
-            }
-        } else {
-            Box::new(inverted_corpus_graph)
-        };
 
         Ok(Self {
             selected_corpus_node: None,
-            gs,
+            gs: Box::new(inverted_corpus_graph),
             corpus_graph,
             notifier,
         })
