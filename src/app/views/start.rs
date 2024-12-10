@@ -25,7 +25,7 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
 
     ui.horizontal_wrapped(|ui| {
         if let Err(e) = corpus_selection(ui, app, &corpora) {
-            app.messages.handle_error(e);
+            app.notifier.handle_error(e);
         }
         ui.separator();
         import_corpus(ui, app, cs.clone());
@@ -116,12 +116,12 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>
         ui.add(edit);
         if ui.button("Add").clicked() {
             if app.new_corpus_name.is_empty() {
-                app.messages
+                app.notifier
                     .add_toast(Toast::warning("Empty corpus name not allowed"));
             } else if let Err(e) = cs.create_empty_corpus(&app.new_corpus_name, false) {
-                app.messages.handle_error(e.into());
+                app.notifier.handle_error(e.into());
             } else {
-                app.messages.add_toast(Toast::info(format!(
+                app.notifier.add_toast(Toast::info(format!(
                     "Corpus \"{}\" added",
                     &app.new_corpus_name
                 )));
