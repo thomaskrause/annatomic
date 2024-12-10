@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use egui::{CollapsingHeader, ScrollArea, Ui};
+use egui_extras::Column;
 use egui_notify::Toast;
 use graphannis::{
     graph::{Edge, NodeID, WriteableGraphStorage},
@@ -87,9 +88,42 @@ impl CorpusTree {
             let keys = self
                 .notifier
                 .unwrap_or_default(keys.context("Could not get annotation keys"));
-            for k in keys {
-                ui.label(format!("{k:?}"));
-            }
+
+            egui_extras::TableBuilder::new(ui)
+                .columns(Column::auto(), 3)
+                .header(20.0, |mut header| {
+                    header.col(|ui| {
+                        ui.label("Namespace");
+                    });
+                    header.col(|ui| {
+                        ui.label("Name");
+                    });
+                    header.col(|ui| {
+                        ui.label("Value");
+                    });
+                })
+                .body(|mut body| {
+                    for k in keys {
+                        body.row(20.0, |mut row| {
+                            row.col(|ui| {
+                                ui.label(k.ns.to_string());
+                            });
+                            row.col(|ui| {
+                                ui.label(k.name.to_string());
+                            });
+                            row.col(|ui| {
+                                let value = self
+                                    .corpus_graph
+                                    .get_node_annos()
+                                    .get_value_for_item(&selected, &k);
+                                let value = self.notifier.unwrap_or_default(
+                                    value.context("Could not get node annotation value"),
+                                );
+                                ui.label(value.unwrap_or_default());
+                            });
+                        });
+                    }
+                });
         } else {
             ui.label("Select a corpus/document node to edit it.");
         }
