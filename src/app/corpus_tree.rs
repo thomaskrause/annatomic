@@ -88,9 +88,9 @@ impl CorpusTree {
             let keys = self
                 .notifier
                 .unwrap_or_default(keys.context("Could not get annotation keys"));
-
             egui_extras::TableBuilder::new(ui)
-                .columns(Column::auto(), 3)
+                .columns(Column::auto(), 2)
+                .columns(Column::remainder(), 1)
                 .header(20.0, |mut header| {
                     header.col(|ui| {
                         ui.label("Namespace");
@@ -103,7 +103,7 @@ impl CorpusTree {
                     });
                 })
                 .body(|mut body| {
-                    for k in keys {
+                    for k in keys.iter() {
                         body.row(20.0, |mut row| {
                             row.col(|ui| {
                                 ui.label(k.ns.to_string());
@@ -130,10 +130,12 @@ impl CorpusTree {
     }
 
     pub(crate) fn show(&mut self, ui: &mut Ui) {
-        ui.heading("Corpus editor");
-        ui.columns_const(|[c1, c2]| {
-            self.show_structure(c1);
-            self.show_meta_editor(c2);
+        ui.group(|ui| {
+            ui.heading("Corpus editor");
+            ui.columns_const(|[c1, c2]| {
+                c1.push_id("corpus_structure", |ui| self.show_structure(ui));
+                c2.push_id("meta_editor", |ui| self.show_meta_editor(ui));
+            });
         });
     }
     fn recursive_corpus_structure(&mut self, ui: &mut Ui, parent: NodeID, level: usize) {
