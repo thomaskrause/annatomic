@@ -30,7 +30,8 @@ pub struct AnnatomicApp {
     main_view: MainView,
     corpus_selection: CorpusSelection,
     new_corpus_name: String,
-    corpus_tree: CorpusTree,
+    #[serde(skip)]
+    corpus_tree: Option<CorpusTree>,
     #[serde(skip)]
     jobs: Arc<JobExecutor>,
     #[serde(skip)]
@@ -50,6 +51,8 @@ impl AnnatomicApp {
         if let Some(storage) = cc.storage {
             let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             app.ensure_corpus_storage_loaded()?;
+            // Rebuild the corpus state that is not persisted but calculated
+            app.schedule_corpus_tree_update();
             return Ok(app);
         }
 
@@ -145,10 +148,12 @@ impl AnnatomicApp {
                                 CorpusTree::create_from_graphstorage(cs, &corpus_name)?;
                             Ok(corpus_tree)
                         },
-                        |result, app| app.corpus_tree = result,
+                        |result, app| {
+                            app.corpus_tree = Some(result);
+                        },
                     );
                 } else {
-                    self.corpus_tree = CorpusTree::default();
+                    self.corpus_tree = None;
                 }
             }
             Err(err) => {
