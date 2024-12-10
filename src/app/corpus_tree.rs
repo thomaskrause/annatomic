@@ -1,7 +1,8 @@
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Context;
 use egui::{CollapsingHeader, ScrollArea, Ui};
+use egui_notify::Toast;
 use graphannis::{
     graph::{Edge, EdgeContainer, GraphStorage, NodeID, WriteableGraphStorage},
     model::{AnnotationComponent, AnnotationComponentType::PartOf},
@@ -12,15 +13,19 @@ use graphannis_core::graph::{
     ANNIS_NS, NODE_NAME_KEY,
 };
 
+use super::Notifier;
+
 pub(crate) struct CorpusTree {
     gs: Box<dyn GraphStorage>,
     corpus_graph: AnnotationGraph,
+    notifier: Arc<Notifier>,
 }
 
 impl CorpusTree {
     pub fn create_from_graphstorage(
         cs: Arc<CorpusStorage>,
         corpus_name: &str,
+        notifier: Arc<Notifier>,
     ) -> anyhow::Result<Self> {
         let mut corpus_graph = cs.corpus_graph(corpus_name)?;
         corpus_graph.ensure_loaded_all()?;
@@ -58,7 +63,11 @@ impl CorpusTree {
             Box::new(inverted_corpus_graph)
         };
 
-        Ok(Self { gs, corpus_graph })
+        Ok(Self {
+            gs,
+            corpus_graph,
+            notifier,
+        })
     }
 
     pub(crate) fn show(&self, ui: &mut Ui) -> anyhow::Result<()> {
@@ -84,14 +93,26 @@ impl CorpusTree {
     fn recursive_corpus_structure(&self, ui: &mut Ui, parent: NodeID, level: usize) {
         let child_nodes: graphannis_core::errors::Result<Vec<NodeID>> =
             self.gs.get_outgoing_edges(parent).collect();
+        let child_nodes = match child_nodes {
+            Ok(o) => o,
+            Err(e) => {
+                self.notifier.handle_error(e.into());
+                Vec::default()
+            }
+        };
         let parent_node_name = self
             .corpus_graph
             .get_node_annos()
             .get_value_for_item(&parent, &NODE_NAME_KEY);
+        let parent_node_name = match parent_node_name {
+            Ok(o) => o,
+            Err(e) => {
+                self.notifier.handle_error(e.into());
+                None
+            }
+        };
 
-        if let (Ok(child_nodes), Ok(parent_node_name)) = (child_nodes, parent_node_name) {
-            let parent_node_name =
-                parent_node_name.unwrap_or(Cow::Borrowed("<node name not found>"));
+        if let Some(parent_node_name) = parent_node_name {
             if child_nodes.is_empty() {
                 if ui.selectable_label(false, parent_node_name).clicked() {
                     // TODO
@@ -105,6 +126,8 @@ impl CorpusTree {
                         }
                     });
             }
+        } else {
+            self.notifier.add_toast(Toast::error("Node name not found"));
         }
     }
 }

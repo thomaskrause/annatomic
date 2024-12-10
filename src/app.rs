@@ -35,7 +35,7 @@ pub struct AnnatomicApp {
     #[serde(skip)]
     jobs: Arc<JobExecutor>,
     #[serde(skip)]
-    messages: Arc<Notifier>,
+    notifier: Arc<Notifier>,
     #[serde(skip)]
     corpus_storage: Option<Arc<CorpusStorage>>,
 }
@@ -141,11 +141,12 @@ impl AnnatomicApp {
                     // Run a background job that creates the new corpus structure
 
                     let job_title = format!("Updating corpus structure for {}", &corpus_name);
+                    let notifier = self.notifier.clone();
                     self.jobs.add(
                         &job_title,
                         move |_job| {
                             let corpus_tree =
-                                CorpusTree::create_from_graphstorage(cs, &corpus_name)?;
+                                CorpusTree::create_from_graphstorage(cs, &corpus_name, notifier)?;
                             Ok(corpus_tree)
                         },
                         |result, app| {
@@ -157,7 +158,7 @@ impl AnnatomicApp {
                 }
             }
             Err(err) => {
-                self.messages.handle_error(err);
+                self.notifier.handle_error(err);
             }
         }
     }
@@ -198,13 +199,13 @@ impl eframe::App for AnnatomicApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             let has_jobs = self.jobs.clone().show(ui, self);
             if !has_jobs {
-                self.messages.show(ctx);
+                self.notifier.show(ctx);
                 let response = match self.main_view {
                     MainView::Start => views::start::show(ui, self),
                     MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {
-                    self.messages.handle_error(e);
+                    self.notifier.handle_error(e);
                 }
             }
         });
