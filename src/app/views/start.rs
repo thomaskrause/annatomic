@@ -31,7 +31,7 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         demo_link(c4, app);
     });
     ui.separator();
-    corpus_structure(ui, app)?;
+    corpus_structure(ui, app);
 
     Ok(())
 }
@@ -138,12 +138,10 @@ fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
     });
 }
 
-fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) -> anyhow::Result<()> {
-    if let Some(corpus_tree) = &app.corpus_tree {
-        corpus_tree.show(ui)?;
+fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
+    if let Some(corpus_tree) = &mut app.corpus_tree {
+        corpus_tree.show(ui);
     } else {
         ui.label("Select a corpus to edit it.");
     }
-
-    Ok(())
 }

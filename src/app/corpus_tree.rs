@@ -16,6 +16,7 @@ use graphannis_core::graph::{
 use super::Notifier;
 
 pub(crate) struct CorpusTree {
+    pub(crate) selected_corpus_node: Option<NodeID>,
     gs: Box<dyn GraphStorage>,
     corpus_graph: AnnotationGraph,
     notifier: Arc<Notifier>,
@@ -44,7 +45,8 @@ impl CorpusTree {
             let source = source?;
             for target in partof.get_outgoing_edges(source) {
                 let target = target?;
-                inverted_corpus_graph.add_edge(Edge { source, target }.inverse())?;
+                let edge = Edge { source, target };
+                inverted_corpus_graph.add_edge(edge.inverse())?;
             }
         }
         inverted_corpus_graph.calculate_statistics()?;
@@ -64,16 +66,18 @@ impl CorpusTree {
         };
 
         Ok(Self {
+            selected_corpus_node: None,
             gs,
             corpus_graph,
             notifier,
         })
     }
 
-    pub(crate) fn show(&self, ui: &mut Ui) -> anyhow::Result<()> {
-        ui.heading("Corpus editor");
+    fn show_structure(&mut self, ui: &mut Ui) {
         let root_nodes: graphannis_core::errors::Result<Vec<_>> = self.gs.root_nodes().collect();
-        let root_nodes = root_nodes?;
+        let root_nodes = self
+            .notifier
+            .unwrap_or_default(root_nodes.context("Could not get root nodes"));
         ScrollArea::vertical().show(ui, |ui| {
             if root_nodes.len() > 1 {
                 CollapsingHeader::new("<root>")
@@ -87,19 +91,38 @@ impl CorpusTree {
                 self.recursive_corpus_structure(ui, *root_node, 0)
             }
         });
-
-        Ok(())
     }
-    fn recursive_corpus_structure(&self, ui: &mut Ui, parent: NodeID, level: usize) {
+
+    fn show_meta_editor(&mut self, ui: &mut Ui) {
+        if let Some(selected) = self.selected_corpus_node {
+            let keys = self
+                .corpus_graph
+                .get_node_annos()
+                .get_all_keys_for_item(&selected, None, None);
+            let keys = self
+                .notifier
+                .unwrap_or_default(keys.context("Could not get annotation keys"));
+            for k in keys {
+                ui.label(format!("{k:?}"));
+            }
+        } else {
+            ui.label("Select a corpus/document node to edit it.");
+        }
+    }
+
+    pub(crate) fn show(&mut self, ui: &mut Ui) {
+        ui.heading("Corpus editor");
+        ui.columns_const(|[c1, c2]| {
+            self.show_structure(c1);
+            self.show_meta_editor(c2);
+        });
+    }
+    fn recursive_corpus_structure(&mut self, ui: &mut Ui, parent: NodeID, level: usize) {
         let child_nodes: graphannis_core::errors::Result<Vec<NodeID>> =
             self.gs.get_outgoing_edges(parent).collect();
-        let child_nodes = match child_nodes {
-            Ok(o) => o,
-            Err(e) => {
-                self.notifier.handle_error(e.into());
-                Vec::default()
-            }
-        };
+        let child_nodes = self
+            .notifier
+            .unwrap_or_default(child_nodes.context("Could not get child nodes"));
         let parent_node_name = self
             .corpus_graph
             .get_node_annos()
@@ -114,8 +137,13 @@ impl CorpusTree {
 
         if let Some(parent_node_name) = parent_node_name {
             if child_nodes.is_empty() {
-                if ui.selectable_label(false, parent_node_name).clicked() {
-                    // TODO
+                let is_selected = self.selected_corpus_node.is_some_and(|n| n == parent);
+                if ui.selectable_label(is_selected, parent_node_name).clicked() {
+                    if is_selected {
+                        self.selected_corpus_node = None;
+                    } else {
+                        self.selected_corpus_node = Some(parent);
+                    }
                 }
             } else {
                 CollapsingHeader::new(parent_node_name)
