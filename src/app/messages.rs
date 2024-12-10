@@ -17,6 +17,20 @@ impl Notifier {
         error!("{err}");
         self.error_queue.push(err);
     }
+
+    pub(crate) fn unwrap_or_default<T>(&self, result: anyhow::Result<T>) -> T
+    where
+        T: Default,
+    {
+        match result {
+            Ok(o) => o,
+            Err(e) => {
+                self.handle_error(e);
+                T::default()
+            }
+        }
+    }
+
     pub(crate) fn add_toast(&self, toast: Toast) {
         let messages = self.toasts.lock();
         match messages {
