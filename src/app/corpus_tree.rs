@@ -115,7 +115,7 @@ impl CorpusTree {
                                 let value = self
                                     .corpus_graph
                                     .get_node_annos()
-                                    .get_value_for_item(&selected, &k);
+                                    .get_value_for_item(&selected, k);
                                 let value = self.notifier.unwrap_or_default(
                                     value.context("Could not get node annotation value"),
                                 );
