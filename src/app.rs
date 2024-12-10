@@ -4,14 +4,14 @@ use anyhow::{Context, Result};
 use corpus_tree::CorpusTree;
 use egui::{Color32, RichText};
 use egui_modal::Modal;
-use egui_notify::Toasts;
 use graphannis::CorpusStorage;
 use job_executor::JobExecutor;
-use log::error;
+use messages::Notifier;
 use views::start::CorpusSelection;
 
 mod corpus_tree;
 mod job_executor;
+mod messages;
 mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
@@ -35,7 +35,7 @@ pub struct AnnatomicApp {
     #[serde(skip)]
     jobs: Arc<JobExecutor>,
     #[serde(skip)]
-    messages: Toasts,
+    messages: Arc<Notifier>,
     #[serde(skip)]
     corpus_storage: Option<Arc<CorpusStorage>>,
 }
@@ -157,8 +157,7 @@ impl AnnatomicApp {
                 }
             }
             Err(err) => {
-                self.messages.error(err.to_string());
-                error!("{err}");
+                self.messages.handle_error(err);
             }
         }
     }
@@ -205,8 +204,7 @@ impl eframe::App for AnnatomicApp {
                     MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {
-                    self.messages.error(format!("{e}"));
-                    error!("{e}");
+                    self.messages.handle_error(e);
                 }
             }
         });
