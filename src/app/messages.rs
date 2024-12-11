@@ -13,9 +13,18 @@ pub(crate) struct Notifier {
 }
 
 impl Notifier {
-    pub(crate) fn handle_error(&self, err: Error) {
-        error!("{err}");
+    pub(crate) fn report_error(&self, err: Error) {
+        if err.chain().len() > 1 {
+            error!("{err}: {}", err.root_cause().to_string());
+        } else {
+            error!("{err}");
+        }
         self.error_queue.push(err);
+    }
+    pub(crate) fn report_result<T>(&self, result: anyhow::Result<T>) {
+        if let Err(err) = result {
+            self.report_error(err);
+        }
     }
 
     pub(crate) fn unwrap_or_default<T>(&self, result: anyhow::Result<T>) -> T
@@ -25,7 +34,7 @@ impl Notifier {
         match result {
             Ok(o) => o,
             Err(e) => {
-                self.handle_error(e);
+                self.report_error(e);
                 T::default()
             }
         }
@@ -47,7 +56,12 @@ impl Notifier {
         match messages {
             Ok(mut messages) => {
                 while let Some(e) = self.error_queue.pop() {
-                    messages.error(e.to_string());
+                    let error_msg = if e.chain().len() > 1 {
+                        format!("{e}: {}", e.root_cause().to_string())
+                    } else {
+                        format!("{e}")
+                    };
+                    messages.error(error_msg);
                 }
                 messages.show(ctx);
             }
