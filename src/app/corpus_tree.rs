@@ -88,10 +88,13 @@ impl CorpusTree {
             let keys = self
                 .notifier
                 .unwrap_or_default(keys.context("Could not get annotation keys"));
+
+            let text_style_body = egui::TextStyle::Body.resolve(ui.style());
             egui_extras::TableBuilder::new(ui)
                 .columns(Column::auto(), 2)
                 .columns(Column::remainder(), 1)
-                .header(20.0, |mut header| {
+                .striped(true)
+                .header(text_style_body.size, |mut header| {
                     header.col(|ui| {
                         ui.label("Namespace");
                     });
@@ -104,7 +107,7 @@ impl CorpusTree {
                 })
                 .body(|mut body| {
                     for k in keys.iter() {
-                        body.row(20.0, |mut row| {
+                        body.row(text_style_body.size, |mut row| {
                             row.col(|ui| {
                                 ui.label(k.ns.to_string());
                             });

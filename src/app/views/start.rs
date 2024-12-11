@@ -22,15 +22,14 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         .context("Missing corpus storage")?
         .clone();
     let corpora = cs.list()?;
-    ui.group(|ui| {
-        ui.columns_const(|[c1, c2, c3, c4]| {
-            if let Err(e) = corpus_selection(c1, app, &corpora) {
-                app.notifier.handle_error(e);
-            }
-            import_corpus(c2, app, cs.clone());
-            create_new_corpus(c3, app, cs.clone());
-            demo_link(c4, app);
-        });
+
+    ui.columns_const(|[c1, c2, c3, c4]| {
+        if let Err(e) = corpus_selection(c1, app, &corpora) {
+            app.notifier.handle_error(e);
+        }
+        import_corpus(c2, app, cs.clone());
+        create_new_corpus(c3, app, cs.clone());
+        demo_link(c4, app);
     });
     corpus_structure(ui, app);
 
