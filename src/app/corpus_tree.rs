@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Context;
 use egui::{CollapsingHeader, RichText, ScrollArea, Ui};
@@ -17,7 +17,7 @@ use super::Notifier;
 
 pub(crate) struct CorpusTree {
     pub(crate) selected_corpus_node: Option<NodeID>,
-    current_node_annos: BTreeMap<(String, String), String>,
+    current_node_annos: Vec<(String, String, String)>,
     gs: Box<dyn WriteableGraphStorage>,
     corpus_graph: AnnotationGraph,
     notifier: Arc<Notifier>,
@@ -54,7 +54,7 @@ impl CorpusTree {
 
         Ok(Self {
             selected_corpus_node: None,
-            current_node_annos: BTreeMap::new(),
+            current_node_annos: Vec::new(),
             gs: Box::new(inverted_corpus_graph),
             corpus_graph,
             notifier,
@@ -87,7 +87,6 @@ impl CorpusTree {
             egui_extras::TableBuilder::new(ui)
                 .columns(Column::auto(), 2)
                 .columns(Column::remainder(), 1)
-                .striped(true)
                 .header(text_style_body.size + 2.0, |mut header| {
                     header.col(|ui| {
                         ui.label(RichText::new("Namespace").underline());
@@ -100,16 +99,16 @@ impl CorpusTree {
                     });
                 })
                 .body(|mut body| {
-                    for ((ns, name), value) in self.current_node_annos.iter_mut() {
+                    for entry in self.current_node_annos.iter_mut() {
                         body.row(text_style_body.size, |mut row| {
                             row.col(|ui| {
-                                ui.label(ns.to_string());
+                                ui.text_edit_singleline(&mut entry.0);
                             });
                             row.col(|ui| {
-                                ui.label(name.to_string());
+                                ui.text_edit_singleline(&mut entry.1);
                             });
                             row.col(|ui| {
-                                ui.label(value.to_string());
+                                ui.text_edit_singleline(&mut entry.2);
                             });
                         });
                     }
@@ -171,8 +170,11 @@ impl CorpusTree {
                             let anno_value = self.notifier.unwrap_or_default(
                                 anno_value.context("Could not get annotation value"),
                             );
-                            self.current_node_annos
-                                .insert((k.ns.to_string(), k.name.to_string()), anno_value);
+                            self.current_node_annos.push((
+                                k.ns.to_string(),
+                                k.name.to_string(),
+                                anno_value,
+                            ));
                         }
                     }
                 }
