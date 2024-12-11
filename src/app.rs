@@ -7,11 +7,13 @@ use egui_modal::Modal;
 use graphannis::CorpusStorage;
 use job_executor::JobExecutor;
 use messages::Notifier;
+use project_manager::ProjectManager;
 use views::start::CorpusSelection;
 
 mod corpus_tree;
 mod job_executor;
 mod messages;
+mod project_manager;
 mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
@@ -30,6 +32,7 @@ pub struct AnnatomicApp {
     main_view: MainView,
     corpus_selection: CorpusSelection,
     new_corpus_name: String,
+    project_manager: ProjectManager,
     #[serde(skip)]
     corpus_tree: Option<CorpusTree>,
     #[serde(skip)]
@@ -158,7 +161,7 @@ impl AnnatomicApp {
                 }
             }
             Err(err) => {
-                self.notifier.handle_error(err);
+                self.notifier.report_error(err);
             }
         }
     }
@@ -207,7 +210,7 @@ impl eframe::App for AnnatomicApp {
                     MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {
-                    self.notifier.handle_error(e);
+                    self.notifier.report_error(e);
                 }
             }
         });

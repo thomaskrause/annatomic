@@ -1,26 +1,44 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use egui::{CollapsingHeader, RichText, ScrollArea, Ui};
+use egui::{CollapsingHeader, RichText, ScrollArea, TextBuffer, Ui};
 use egui_extras::Column;
 use egui_notify::Toast;
 use graphannis::{
     graph::{Edge, NodeID, WriteableGraphStorage},
-    model::{AnnotationComponent, AnnotationComponentType::PartOf},
+    model::{
+        AnnotationComponent,
+        AnnotationComponentType::{self, PartOf},
+    },
+    update::{
+        GraphUpdate,
+        UpdateEvent::{AddNodeLabel, DeleteNodeLabel},
+    },
     AnnotationGraph, CorpusStorage,
 };
-use graphannis_core::graph::{
-    storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY,
+use graphannis_core::{
+    graph::{storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY},
+    types::ComponentType,
 };
 
 use super::Notifier;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct MetaEntry {
+    current_namespace: String,
+    current_name: String,
+    current_value: String,
+    original_namespace: String,
+    original_name: String,
+}
+
 pub(crate) struct CorpusTree {
     pub(crate) selected_corpus_node: Option<NodeID>,
-    current_node_annos: Vec<(String, String, String)>,
+    current_node_annos: Vec<MetaEntry>,
     gs: Box<dyn WriteableGraphStorage>,
     corpus_graph: AnnotationGraph,
     notifier: Arc<Notifier>,
+    metadata_changed: bool,
 }
 
 impl CorpusTree {
@@ -30,6 +48,12 @@ impl CorpusTree {
         notifier: Arc<Notifier>,
     ) -> anyhow::Result<Self> {
         let mut corpus_graph = cs.corpus_graph(corpus_name)?;
+        // Make sure all relevant graph storages exist
+        for c in AnnotationComponentType::default_components() {
+            let result = corpus_graph.get_or_create_writable(&c);
+            notifier
+                .report_result(result.with_context(|| format!("Could not create component {c}")));
+        }
         corpus_graph.ensure_loaded_all()?;
 
         // Create our own graph storage with inverted edges
@@ -54,6 +78,7 @@ impl CorpusTree {
 
         Ok(Self {
             selected_corpus_node: None,
+            metadata_changed: false,
             current_node_annos: Vec::new(),
             gs: Box::new(inverted_corpus_graph),
             corpus_graph,
@@ -102,13 +127,22 @@ impl CorpusTree {
                     for entry in self.current_node_annos.iter_mut() {
                         body.row(text_style_body.size, |mut row| {
                             row.col(|ui| {
-                                ui.text_edit_singleline(&mut entry.0);
+                                if ui
+                                    .text_edit_singleline(&mut entry.current_namespace)
+                                    .changed()
+                                {
+                                    self.metadata_changed = true;
+                                }
                             });
                             row.col(|ui| {
-                                ui.text_edit_singleline(&mut entry.1);
+                                if ui.text_edit_singleline(&mut entry.current_name).changed() {
+                                    self.metadata_changed = true;
+                                }
                             });
                             row.col(|ui| {
-                                ui.text_edit_singleline(&mut entry.2);
+                                if ui.text_edit_singleline(&mut entry.current_value).changed() {
+                                    self.metadata_changed = true;
+                                }
                             });
                         });
                     }
@@ -140,7 +174,7 @@ impl CorpusTree {
         let parent_node_name = match parent_node_name {
             Ok(o) => o,
             Err(e) => {
-                self.notifier.handle_error(e.into());
+                self.notifier.report_error(e.into());
                 None
             }
         };
@@ -148,12 +182,47 @@ impl CorpusTree {
         if let Some(parent_node_name) = parent_node_name {
             if child_nodes.is_empty() {
                 let is_selected = self.selected_corpus_node.is_some_and(|n| n == parent);
-                if ui.selectable_label(is_selected, parent_node_name).clicked() {
+                if ui
+                    .selectable_label(is_selected, parent_node_name.as_str())
+                    .clicked()
+                {
+                    if self.metadata_changed {
+                        // apply all changes as updates to our internal corpus graph
+                        let mut updates = GraphUpdate::new();
+                        for entry in self.current_node_annos.iter_mut() {
+                            let result = updates.add_event(DeleteNodeLabel {
+                                node_name: parent_node_name.clone().into(),
+                                anno_ns: entry.original_namespace.clone().into(),
+                                anno_name: entry.original_name.clone().into(),
+                            });
+                            self.notifier
+                                .report_result(result.context("Could not add graph update"));
+                            let result = updates.add_event(AddNodeLabel {
+                                node_name: parent_node_name.clone().into(),
+                                anno_ns: entry.current_namespace.clone().into(),
+                                anno_name: entry.current_name.clone().into(),
+                                anno_value: entry.current_value.clone().into(),
+                            });
+                            self.notifier
+                                .report_result(result.context("Could not add graph update"));
+                            entry.original_namespace = entry.current_namespace.clone();
+                            entry.original_name = entry.current_name.clone();
+                        }
+                        let result = self.corpus_graph.apply_update(&mut updates, |_| {});
+
+                        self.notifier
+                            .report_result(result.context("Could apply add graph update"));
+
+                        self.current_node_annos.sort();
+                        // TODO: record these in the project manager and update the actual corpus
+                    }
+
                     if is_selected {
                         self.selected_corpus_node = None;
                     } else {
                         self.selected_corpus_node = Some(parent);
                         self.current_node_annos.clear();
+                        self.metadata_changed = false;
                         let anno_keys = self
                             .corpus_graph
                             .get_node_annos()
@@ -170,12 +239,15 @@ impl CorpusTree {
                             let anno_value = self.notifier.unwrap_or_default(
                                 anno_value.context("Could not get annotation value"),
                             );
-                            self.current_node_annos.push((
-                                k.ns.to_string(),
-                                k.name.to_string(),
-                                anno_value,
-                            ));
+                            self.current_node_annos.push(MetaEntry {
+                                original_namespace: k.ns.to_string(),
+                                original_name: k.name.to_string(),
+                                current_namespace: k.ns.to_string(),
+                                current_name: k.name.to_string(),
+                                current_value: anno_value,
+                            });
                         }
+                        self.current_node_annos.sort();
                     }
                 }
             } else {
