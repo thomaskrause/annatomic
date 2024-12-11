@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
-use egui::{CollapsingHeader, ScrollArea, Ui};
+use egui::{CollapsingHeader, RichText, ScrollArea, Ui};
 use egui_extras::Column;
 use egui_notify::Toast;
 use graphannis::{
@@ -17,6 +17,7 @@ use super::Notifier;
 
 pub(crate) struct CorpusTree {
     pub(crate) selected_corpus_node: Option<NodeID>,
+    current_node_annos: BTreeMap<(String, String), String>,
     gs: Box<dyn WriteableGraphStorage>,
     corpus_graph: AnnotationGraph,
     notifier: Arc<Notifier>,
@@ -53,6 +54,7 @@ impl CorpusTree {
 
         Ok(Self {
             selected_corpus_node: None,
+            current_node_annos: BTreeMap::new(),
             gs: Box::new(inverted_corpus_graph),
             corpus_graph,
             notifier,
@@ -80,49 +82,34 @@ impl CorpusTree {
     }
 
     fn show_meta_editor(&mut self, ui: &mut Ui) {
-        if let Some(selected) = self.selected_corpus_node {
-            let keys = self
-                .corpus_graph
-                .get_node_annos()
-                .get_all_keys_for_item(&selected, None, None);
-            let keys = self
-                .notifier
-                .unwrap_or_default(keys.context("Could not get annotation keys"));
-
+        if self.selected_corpus_node.is_some() {
             let text_style_body = egui::TextStyle::Body.resolve(ui.style());
             egui_extras::TableBuilder::new(ui)
                 .columns(Column::auto(), 2)
                 .columns(Column::remainder(), 1)
                 .striped(true)
-                .header(text_style_body.size, |mut header| {
+                .header(text_style_body.size + 2.0, |mut header| {
                     header.col(|ui| {
-                        ui.label("Namespace");
+                        ui.label(RichText::new("Namespace").underline());
                     });
                     header.col(|ui| {
-                        ui.label("Name");
+                        ui.label(RichText::new("Name").underline());
                     });
                     header.col(|ui| {
-                        ui.label("Value");
+                        ui.label(RichText::new("Value").underline());
                     });
                 })
                 .body(|mut body| {
-                    for k in keys.iter() {
+                    for ((ns, name), value) in self.current_node_annos.iter_mut() {
                         body.row(text_style_body.size, |mut row| {
                             row.col(|ui| {
-                                ui.label(k.ns.to_string());
+                                ui.label(ns.to_string());
                             });
                             row.col(|ui| {
-                                ui.label(k.name.to_string());
+                                ui.label(name.to_string());
                             });
                             row.col(|ui| {
-                                let value = self
-                                    .corpus_graph
-                                    .get_node_annos()
-                                    .get_value_for_item(&selected, k);
-                                let value = self.notifier.unwrap_or_default(
-                                    value.context("Could not get node annotation value"),
-                                );
-                                ui.label(value.unwrap_or_default());
+                                ui.label(value.to_string());
                             });
                         });
                     }
@@ -167,6 +154,26 @@ impl CorpusTree {
                         self.selected_corpus_node = None;
                     } else {
                         self.selected_corpus_node = Some(parent);
+                        self.current_node_annos.clear();
+                        let anno_keys = self
+                            .corpus_graph
+                            .get_node_annos()
+                            .get_all_keys_for_item(&parent, None, None);
+                        let anno_keys = self
+                            .notifier
+                            .unwrap_or_default(anno_keys.context("Could not get annotation keys"));
+                        for k in anno_keys {
+                            let anno_value = self
+                                .corpus_graph
+                                .get_node_annos()
+                                .get_value_for_item(&parent, &k)
+                                .and_then(|v| Ok(v.unwrap_or_default().to_string()));
+                            let anno_value = self.notifier.unwrap_or_default(
+                                anno_value.context("Could not get annotation value"),
+                            );
+                            self.current_node_annos
+                                .insert((k.ns.to_string(), k.name.to_string()), anno_value);
+                        }
                     }
                 }
             } else {
