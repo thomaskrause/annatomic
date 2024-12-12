@@ -4,6 +4,7 @@ use std::{
 };
 
 use egui::Ui;
+use log::debug;
 
 use super::AnnatomicApp;
 
@@ -12,7 +13,7 @@ use super::AnnatomicApp;
 /// the app does not freeze. But the user should not be able to make any
 /// meaningful changes.
 #[derive(Clone, Default)]
-pub(super) struct FgJob {
+pub(crate) struct FgJob {
     msg: Arc<RwLock<Option<String>>>,
 }
 
@@ -29,8 +30,8 @@ impl FgJob {
 
 type FnStateUpdate = Box<dyn FnOnce(&mut AnnatomicApp) + Send + Sync>;
 
-#[derive(Default)]
-pub(super) struct JobExecutor {
+#[derive(Default, Clone)]
+pub(crate) struct JobExecutor {
     running: Arc<RwLock<BTreeMap<String, FgJob>>>,
     finished: Arc<RwLock<BTreeMap<String, FnStateUpdate>>>,
     failed: Arc<RwLock<BTreeMap<String, anyhow::Error>>>,
@@ -43,6 +44,7 @@ impl JobExecutor {
         U: FnOnce(R, &mut AnnatomicApp) + Send + Sync + 'static,
         R: Send + Sync + 'static,
     {
+        debug!("Adding foreground job \"{title}\"");
         let running_jobs = self.running.clone();
         let failed_jobs = self.failed.clone();
         let finished_jobs = self.finished.clone();
@@ -51,11 +53,15 @@ impl JobExecutor {
         {
             if let Ok(mut lock) = running_jobs.write() {
                 lock.insert(title.to_string(), single_job.clone());
+                debug!("Number ofcurrently running jobs: {}", lock.len());
             }
         }
         let title = title.to_string();
         rayon::spawn(move || {
-            match worker(single_job) {
+            debug!("Spawning foreground job \"{title}\"");
+            let result = worker(single_job);
+            debug!("Finished foreground job \"{title}\"");
+            match result {
                 Ok(result) => {
                     if let Ok(mut finished_jobs) = finished_jobs.write() {
                         finished_jobs.insert(

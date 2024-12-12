@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use graphannis::CorpusStorage;
+use graphannis::{update::GraphUpdate, CorpusStorage};
 use serde::{Deserialize, Serialize};
 
 use super::{job_executor::JobExecutor, CorpusTree, Notifier, APP_ID};
@@ -9,35 +9,29 @@ use super::{job_executor::JobExecutor, CorpusTree, Notifier, APP_ID};
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Project {
     updates_pending: bool,
-    pub(crate) name: Option<String>,
+    pub(crate) selected_corpus_name: Option<String>,
     pub(crate) scheduled_for_deletion: Option<String>,
     #[serde(skip)]
     pub(super) corpus_storage: Option<Arc<CorpusStorage>>,
     #[serde(skip)]
-    pub(crate) corpus_tree: Option<CorpusTree>,
-    #[serde(skip)]
     notifier: Arc<Notifier>,
-    #[serde(skip)]
-    jobs: Arc<JobExecutor>,
 }
 
 impl Project {
-    pub(crate) fn new(notifier: Arc<Notifier>, jobs: Arc<JobExecutor>) -> Self {
+    pub(crate) fn new(notifier: Arc<Notifier>) -> Self {
         Self {
             updates_pending: false,
-            name: None,
+            selected_corpus_name: None,
             scheduled_for_deletion: None,
             corpus_storage: None,
-            corpus_tree: None,
             notifier,
-            jobs,
         }
     }
 
-    pub(crate) fn delete_corpus(&mut self, corpus_name: String) {
+    pub(crate) fn delete_corpus(&mut self, jobs: &JobExecutor, corpus_name: String) {
         if let Some(cs) = self.corpus_storage.as_ref().cloned() {
             let title = format!("Deleting corpus \"{corpus_name}\"");
-            self.jobs.add(
+            jobs.add(
                 &title,
                 move |_job| {
                     cs.delete(&corpus_name)?;
@@ -49,15 +43,36 @@ impl Project {
         self.scheduled_for_deletion = None;
     }
 
-    pub(crate) fn select_corpus(&mut self, selection: Option<String>) {
-        self.name = selection;
-        self.schedule_corpus_tree_update();
+    pub(crate) fn select_corpus(&mut self, jobs: &JobExecutor, selection: Option<String>) {
+        self.selected_corpus_name = selection;
+        self.schedule_corpus_tree_update(jobs);
+    }
+
+    pub(crate) fn add_changeset(&mut self, jobs: &JobExecutor, mut update: GraphUpdate) {
+        if let Some(corpus_name) = self.selected_corpus_name.clone() {
+            match self.ensure_corpus_storage_loaded() {
+                Ok(cs) => {
+                    self.updates_pending = true;
+                    jobs.add(
+                        "Updating corpus",
+                        move |_job| {
+                            cs.apply_update(&corpus_name, &mut update)?;
+                            Ok(())
+                        },
+                        |_result, app| {
+                            app.project.updates_pending = false;
+                        },
+                    );
+                }
+                Err(err) => self.notifier.report_error(err),
+            }
+        }
     }
 
     /// Rebuild the state that is not persisted but calculated
-    pub(crate) fn load_after_init(&mut self) -> anyhow::Result<()> {
+    pub(crate) fn load_after_init(&mut self, jobs: &JobExecutor) -> anyhow::Result<()> {
         self.ensure_corpus_storage_loaded()?;
-        self.schedule_corpus_tree_update();
+        self.schedule_corpus_tree_update(jobs);
         Ok(())
     }
 
@@ -75,15 +90,16 @@ impl Project {
         }
     }
 
-    fn schedule_corpus_tree_update(&mut self) {
+    fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
         match self.ensure_corpus_storage_loaded() {
             Ok(cs) => {
-                if let Some(corpus_name) = self.name.clone() {
+                if let Some(corpus_name) = self.selected_corpus_name.clone() {
                     // Run a background job that creates the new corpus structure
-
                     let job_title = format!("Updating corpus structure for {}", &corpus_name);
+                    dbg!(&job_title);
+
                     let notifier = self.notifier.clone();
-                    self.jobs.add(
+                    jobs.add(
                         &job_title,
                         move |_job| {
                             let corpus_tree =
@@ -91,11 +107,9 @@ impl Project {
                             Ok(corpus_tree)
                         },
                         |result, app| {
-                            app.project.corpus_tree = Some(result);
+                            app.corpus_tree = Some(result);
                         },
                     );
-                } else {
-                    self.corpus_tree = None;
                 }
             }
             Err(err) => {

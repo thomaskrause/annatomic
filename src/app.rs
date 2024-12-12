@@ -40,7 +40,9 @@ pub struct AnnatomicApp {
     new_corpus_name: String,
     project: Project,
     #[serde(skip)]
-    jobs: Arc<JobExecutor>,
+    pub(crate) corpus_tree: Option<CorpusTree>,
+    #[serde(skip)]
+    jobs: JobExecutor,
     #[serde(skip)]
     notifier: Arc<Notifier>,
     #[serde(skip)]
@@ -50,16 +52,16 @@ pub struct AnnatomicApp {
 impl Default for AnnatomicApp {
     fn default() -> Self {
         let notifier = Arc::new(Notifier::default());
-        let jobs = Arc::new(JobExecutor::default());
-        let project = Project::new(notifier.clone(), jobs.clone());
+        let project = Project::new(notifier.clone());
 
         Self {
             main_view: MainView::Start,
             new_corpus_name: String::default(),
             project,
-            jobs,
+            jobs: JobExecutor::default(),
             notifier,
             args: AnnatomicArgs::default(),
+            corpus_tree: None,
         }
     }
 }
@@ -75,7 +77,7 @@ impl AnnatomicApp {
         if let Some(storage) = cc.storage {
             let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             app.args = args;
-            app.project.load_after_init()?;
+            app.project.load_after_init(&app.jobs)?;
             return Ok(app);
         }
 
@@ -83,7 +85,7 @@ impl AnnatomicApp {
             args,
             ..Default::default()
         };
-        app.project.load_after_init()?;
+        app.project.load_after_init(&app.jobs)?;
 
         Ok(app)
     }
@@ -124,7 +126,7 @@ impl AnnatomicApp {
                         )
                         .clicked()
                     {
-                        self.project.delete_corpus(corpus_name);
+                        self.project.delete_corpus(&self.jobs, corpus_name);
                         modal.close();
                     }
                 });

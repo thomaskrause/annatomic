@@ -38,7 +38,7 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
             for c in corpora {
                 let is_selected = app
                     .project
-                    .name
+                    .selected_corpus_name
                     .as_ref()
                     .is_some_and(|selected_corpus| selected_corpus == &c.name);
                 let label = ui.selectable_label(is_selected, &c.name);
@@ -50,10 +50,10 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
                 if label.clicked() {
                     if is_selected {
                         // Unselect the current corpus
-                        app.project.select_corpus(None);
+                        app.project.select_corpus(&app.jobs, None);
                     } else {
                         // Select this corpus
-                        app.project.select_corpus(Some(c.name.clone()));
+                        app.project.select_corpus(&app.jobs, Some(c.name.clone()));
                     }
                 }
             }
@@ -87,7 +87,7 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
                         Ok(name)
                     },
                     |result, app| {
-                        app.project.select_corpus(Some(result));
+                        app.project.select_corpus(&app.jobs, Some(result));
                     },
                 );
             }
@@ -113,7 +113,8 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>
                     "Corpus \"{}\" added",
                     &app.new_corpus_name
                 )));
-                app.project.select_corpus(Some(app.new_corpus_name.clone()));
+                app.project
+                    .select_corpus(&app.jobs, Some(app.new_corpus_name.clone()));
                 app.new_corpus_name = String::new();
             }
         }
@@ -130,8 +131,8 @@ fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
 }
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
-    if let Some(corpus_tree) = &mut app.project.corpus_tree {
-        corpus_tree.show(ui);
+    if let Some(corpus_tree) = &mut app.corpus_tree {
+        corpus_tree.show(ui, &mut app.project, &app.jobs);
     } else {
         ui.label("Select a corpus to edit it.");
     }

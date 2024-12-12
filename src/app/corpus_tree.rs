@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use egui::{CollapsingHeader, RichText, ScrollArea, TextBuffer, Ui};
+use egui::{Button, CollapsingHeader, RichText, ScrollArea, TextBuffer, Ui};
 use egui_extras::Column;
 use egui_notify::Toast;
 use graphannis::{
@@ -21,7 +21,7 @@ use graphannis_core::{
     types::ComponentType,
 };
 
-use super::Notifier;
+use super::{job_executor::JobExecutor, Notifier, Project};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MetaEntry {
@@ -106,8 +106,8 @@ impl CorpusTree {
         });
     }
 
-    fn show_meta_editor(&mut self, ui: &mut Ui) {
-        if self.selected_corpus_node.is_some() {
+    fn show_meta_editor(&mut self, ui: &mut Ui, project: &mut Project, jobs: &JobExecutor) {
+        if let Some(selected_corpus_node) = self.selected_corpus_node {
             let text_style_body = egui::TextStyle::Body.resolve(ui.style());
             egui_extras::TableBuilder::new(ui)
                 .columns(Column::auto(), 2)
@@ -147,17 +147,57 @@ impl CorpusTree {
                         });
                     }
                 });
+
+            if ui
+                .add_enabled(self.metadata_changed, Button::new("Apply Updates"))
+                .clicked()
+            {
+                let parent_node_name = self
+                    .corpus_graph
+                    .get_node_annos()
+                    .get_value_for_item(&selected_corpus_node, &NODE_NAME_KEY);
+                let parent_node_name = self
+                    .notifier
+                    .unwrap_or_default(parent_node_name.context("Could not get parent node name"))
+                    .unwrap_or_default();
+                // apply all changes as updates to our internal corpus graph
+                let mut update = GraphUpdate::new();
+                for entry in self.current_node_annos.iter_mut() {
+                    let result = update.add_event(DeleteNodeLabel {
+                        node_name: parent_node_name.clone().into(),
+                        anno_ns: entry.original_namespace.clone(),
+                        anno_name: entry.original_name.clone(),
+                    });
+                    self.notifier
+                        .report_result(result.context("Could not add graph update"));
+                    let result = update.add_event(AddNodeLabel {
+                        node_name: parent_node_name.clone().into(),
+                        anno_ns: entry.current_namespace.clone(),
+                        anno_name: entry.current_name.clone(),
+                        anno_value: entry.current_value.clone(),
+                    });
+                    self.notifier
+                        .report_result(result.context("Could not add graph update"));
+                    entry.original_namespace = entry.current_namespace.clone();
+                    entry.original_name = entry.current_name.clone();
+                }
+
+                project.add_changeset(jobs, update);
+
+                self.current_node_annos.sort();
+                // TODO: record these in the project manager and update the actual corpus
+            }
         } else {
             ui.label("Select a corpus/document node to edit it.");
         }
     }
 
-    pub(crate) fn show(&mut self, ui: &mut Ui) {
+    pub(crate) fn show(&mut self, ui: &mut Ui, project: &mut Project, jobs: &JobExecutor) {
         ui.group(|ui| {
             ui.heading("Corpus editor");
             ui.columns_const(|[c1, c2]| {
                 c1.push_id("corpus_structure", |ui| self.show_structure(ui));
-                c2.push_id("meta_editor", |ui| self.show_meta_editor(ui));
+                c2.push_id("meta_editor", |ui| self.show_meta_editor(ui, project, jobs));
             });
         });
     }
@@ -186,37 +226,6 @@ impl CorpusTree {
                     .selectable_label(is_selected, parent_node_name.as_str())
                     .clicked()
                 {
-                    if self.metadata_changed {
-                        // apply all changes as updates to our internal corpus graph
-                        let mut updates = GraphUpdate::new();
-                        for entry in self.current_node_annos.iter_mut() {
-                            let result = updates.add_event(DeleteNodeLabel {
-                                node_name: parent_node_name.clone().into(),
-                                anno_ns: entry.original_namespace.clone(),
-                                anno_name: entry.original_name.clone(),
-                            });
-                            self.notifier
-                                .report_result(result.context("Could not add graph update"));
-                            let result = updates.add_event(AddNodeLabel {
-                                node_name: parent_node_name.clone().into(),
-                                anno_ns: entry.current_namespace.clone(),
-                                anno_name: entry.current_name.clone(),
-                                anno_value: entry.current_value.clone(),
-                            });
-                            self.notifier
-                                .report_result(result.context("Could not add graph update"));
-                            entry.original_namespace = entry.current_namespace.clone();
-                            entry.original_name = entry.current_name.clone();
-                        }
-                        let result = self.corpus_graph.apply_update(&mut updates, |_| {});
-
-                        self.notifier
-                            .report_result(result.context("Could apply add graph update"));
-
-                        self.current_node_annos.sort();
-                        // TODO: record these in the project manager and update the actual corpus
-                    }
-
                     if is_selected {
                         self.selected_corpus_node = None;
                     } else {
