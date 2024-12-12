@@ -32,6 +32,7 @@ rayon = "1.10.0"
 rfd = "0.15.1"
 serde = { version = "1", features = ["derive"] }
 crossbeam-queue = "0.3.11"
+clap = { version = "4.5.23", features = ["derive"] }
 
 # Compile some of the dependencies in release mode if when we are ourself in
 # "dev" mode (like building debug binaries or running tests)

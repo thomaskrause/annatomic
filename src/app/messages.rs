@@ -57,7 +57,7 @@ impl Notifier {
             Ok(mut messages) => {
                 while let Some(e) = self.error_queue.pop() {
                     let error_msg = if e.chain().len() > 1 {
-                        format!("{e}: {}", e.root_cause().to_string())
+                        format!("{e}: {}", e.root_cause())
                     } else {
                         format!("{e}")
                     };

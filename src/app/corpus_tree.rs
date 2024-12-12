@@ -192,16 +192,16 @@ impl CorpusTree {
                         for entry in self.current_node_annos.iter_mut() {
                             let result = updates.add_event(DeleteNodeLabel {
                                 node_name: parent_node_name.clone().into(),
-                                anno_ns: entry.original_namespace.clone().into(),
-                                anno_name: entry.original_name.clone().into(),
+                                anno_ns: entry.original_namespace.clone(),
+                                anno_name: entry.original_name.clone(),
                             });
                             self.notifier
                                 .report_result(result.context("Could not add graph update"));
                             let result = updates.add_event(AddNodeLabel {
                                 node_name: parent_node_name.clone().into(),
-                                anno_ns: entry.current_namespace.clone().into(),
-                                anno_name: entry.current_name.clone().into(),
-                                anno_value: entry.current_value.clone().into(),
+                                anno_ns: entry.current_namespace.clone(),
+                                anno_name: entry.current_name.clone(),
+                                anno_value: entry.current_value.clone(),
                             });
                             self.notifier
                                 .report_result(result.context("Could not add graph update"));
@@ -235,7 +235,7 @@ impl CorpusTree {
                                 .corpus_graph
                                 .get_node_annos()
                                 .get_value_for_item(&parent, &k)
-                                .and_then(|v| Ok(v.unwrap_or_default().to_string()));
+                                .map(|v| v.unwrap_or_default().to_string());
                             let anno_value = self.notifier.unwrap_or_default(
                                 anno_value.context("Could not get annotation value"),
                             );

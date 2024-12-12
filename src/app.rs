@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use clap::Parser;
 use corpus_tree::CorpusTree;
 use egui::{Color32, RichText};
 use egui_modal::Modal;
@@ -8,6 +9,7 @@ use graphannis::CorpusStorage;
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project_manager::ProjectManager;
+use serde::{Deserialize, Serialize};
 use views::start::CorpusSelection;
 
 mod corpus_tree;
@@ -26,6 +28,13 @@ pub(crate) enum MainView {
     Demo,
 }
 
+#[derive(Parser, Debug, Default, Serialize, Deserialize)]
+pub struct AnnatomicArgs {
+    /// Start in development mode which displays additional information only relevant for developers.
+    #[arg(long)]
+    dev: bool,
+}
+
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct AnnatomicApp {
@@ -41,11 +50,13 @@ pub struct AnnatomicApp {
     notifier: Arc<Notifier>,
     #[serde(skip)]
     corpus_storage: Option<Arc<CorpusStorage>>,
+    #[serde(skip)]
+    args: AnnatomicArgs,
 }
 
 impl AnnatomicApp {
     /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
+    pub fn new(cc: &eframe::CreationContext<'_>, args: AnnatomicArgs) -> Result<Self> {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
@@ -53,13 +64,17 @@ impl AnnatomicApp {
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
             let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            app.args = args;
             app.ensure_corpus_storage_loaded()?;
             // Rebuild the corpus state that is not persisted but calculated
             app.schedule_corpus_tree_update();
             return Ok(app);
         }
 
-        let mut app = Self::default();
+        let mut app = Self {
+            args,
+            ..Default::default()
+        };
         app.ensure_corpus_storage_loaded()?;
 
         Ok(app)
@@ -192,9 +207,11 @@ impl eframe::App for AnnatomicApp {
                     }
                 });
                 ui.add_space(16.0);
-                if let Some(seconds) = frame.info().cpu_usage {
-                    ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
-                    ui.add_space(16.0);
+                if self.args.dev {
+                    if let Some(seconds) = frame.info().cpu_usage {
+                        ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
+                        ui.add_space(16.0);
+                    }
                 }
 
                 egui::widgets::global_theme_preference_switch(ui);
