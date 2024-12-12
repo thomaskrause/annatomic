@@ -61,6 +61,7 @@ impl Project {
                         },
                         |_result, app| {
                             app.project.updates_pending = false;
+                            app.project.schedule_corpus_tree_update(&app.jobs);
                         },
                     );
                 }
@@ -96,7 +97,6 @@ impl Project {
                 if let Some(corpus_name) = self.selected_corpus_name.clone() {
                     // Run a background job that creates the new corpus structure
                     let job_title = format!("Updating corpus structure for {}", &corpus_name);
-                    dbg!(&job_title);
 
                     let notifier = self.notifier.clone();
                     jobs.add(
@@ -106,7 +106,13 @@ impl Project {
                                 CorpusTree::create_from_graphstorage(cs, &corpus_name, notifier)?;
                             Ok(corpus_tree)
                         },
-                        |result, app| {
+                        |mut result, app| {
+                            // Keep the selected corpus node
+                            let old_selection = app
+                                .corpus_tree
+                                .as_ref()
+                                .and_then(|ct| ct.selected_corpus_node);
+                            result.select_corpus_node(old_selection);
                             app.corpus_tree = Some(result);
                         },
                     );

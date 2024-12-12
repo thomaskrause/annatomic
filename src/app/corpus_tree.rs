@@ -201,6 +201,40 @@ impl CorpusTree {
             });
         });
     }
+
+    pub(crate) fn select_corpus_node(&mut self, selection: Option<NodeID>) {
+        self.selected_corpus_node = selection;
+        if let Some(parent) = self.selected_corpus_node {
+            self.current_node_annos.clear();
+            self.metadata_changed = false;
+            let anno_keys = self
+                .corpus_graph
+                .get_node_annos()
+                .get_all_keys_for_item(&parent, None, None);
+            let anno_keys = self
+                .notifier
+                .unwrap_or_default(anno_keys.context("Could not get annotation keys"));
+            for k in anno_keys {
+                let anno_value = self
+                    .corpus_graph
+                    .get_node_annos()
+                    .get_value_for_item(&parent, &k)
+                    .map(|v| v.unwrap_or_default().to_string());
+                let anno_value = self
+                    .notifier
+                    .unwrap_or_default(anno_value.context("Could not get annotation value"));
+                self.current_node_annos.push(MetaEntry {
+                    original_namespace: k.ns.to_string(),
+                    original_name: k.name.to_string(),
+                    current_namespace: k.ns.to_string(),
+                    current_name: k.name.to_string(),
+                    current_value: anno_value,
+                });
+            }
+            self.current_node_annos.sort();
+        }
+    }
+
     fn recursive_corpus_structure(&mut self, ui: &mut Ui, parent: NodeID, level: usize) {
         let child_nodes: graphannis_core::errors::Result<Vec<NodeID>> =
             self.gs.get_outgoing_edges(parent).collect();
@@ -227,36 +261,9 @@ impl CorpusTree {
                     .clicked()
                 {
                     if is_selected {
-                        self.selected_corpus_node = None;
+                        self.select_corpus_node(None);
                     } else {
-                        self.selected_corpus_node = Some(parent);
-                        self.current_node_annos.clear();
-                        self.metadata_changed = false;
-                        let anno_keys = self
-                            .corpus_graph
-                            .get_node_annos()
-                            .get_all_keys_for_item(&parent, None, None);
-                        let anno_keys = self
-                            .notifier
-                            .unwrap_or_default(anno_keys.context("Could not get annotation keys"));
-                        for k in anno_keys {
-                            let anno_value = self
-                                .corpus_graph
-                                .get_node_annos()
-                                .get_value_for_item(&parent, &k)
-                                .map(|v| v.unwrap_or_default().to_string());
-                            let anno_value = self.notifier.unwrap_or_default(
-                                anno_value.context("Could not get annotation value"),
-                            );
-                            self.current_node_annos.push(MetaEntry {
-                                original_namespace: k.ns.to_string(),
-                                original_name: k.name.to_string(),
-                                current_namespace: k.ns.to_string(),
-                                current_name: k.name.to_string(),
-                                current_value: anno_value,
-                            });
-                        }
-                        self.current_node_annos.sort();
+                        self.select_corpus_node(Some(parent));
                     }
                 }
             } else {
