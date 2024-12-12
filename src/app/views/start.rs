@@ -8,15 +8,9 @@ use graphannis::{corpusstorage::CorpusInfo, CorpusStorage};
 
 use rfd::FileDialog;
 
-#[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
-
-pub(crate) struct CorpusSelection {
-    pub(crate) name: Option<String>,
-    pub(crate) scheduled_for_deletion: Option<String>,
-}
-
 pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     let cs = app
+        .project
         .corpus_storage
         .as_ref()
         .context("Missing corpus storage")?
@@ -43,25 +37,24 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
         ui.horizontal_wrapped(|ui| {
             for c in corpora {
                 let is_selected = app
-                    .corpus_selection
+                    .project
                     .name
                     .as_ref()
                     .is_some_and(|selected_corpus| selected_corpus == &c.name);
                 let label = ui.selectable_label(is_selected, &c.name);
                 label.context_menu(|ui| {
                     if ui.button("Delete").clicked() {
-                        app.corpus_selection.scheduled_for_deletion = Some(c.name.clone());
+                        app.project.scheduled_for_deletion = Some(c.name.clone());
                     }
                 });
                 if label.clicked() {
                     if is_selected {
                         // Unselect the current corpus
-                        app.corpus_selection.name = None;
+                        app.project.select_corpus(None);
                     } else {
                         // Select this corpus
-                        app.corpus_selection.name = Some(c.name.clone());
+                        app.project.select_corpus(Some(c.name.clone()));
                     }
-                    app.schedule_corpus_tree_update();
                 }
             }
         });
@@ -94,8 +87,7 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
                         Ok(name)
                     },
                     |result, app| {
-                        app.corpus_selection.name = Some(result);
-                        app.schedule_corpus_tree_update();
+                        app.project.select_corpus(Some(result));
                     },
                 );
             }
@@ -121,9 +113,8 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>
                     "Corpus \"{}\" added",
                     &app.new_corpus_name
                 )));
-                app.corpus_selection.name = Some(app.new_corpus_name.to_string());
+                app.project.select_corpus(Some(app.new_corpus_name.clone()));
                 app.new_corpus_name = String::new();
-                app.schedule_corpus_tree_update();
             }
         }
     });
@@ -139,7 +130,7 @@ fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
 }
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
-    if let Some(corpus_tree) = &mut app.corpus_tree {
+    if let Some(corpus_tree) = &mut app.project.corpus_tree {
         corpus_tree.show(ui);
     } else {
         ui.label("Select a corpus to edit it.");
