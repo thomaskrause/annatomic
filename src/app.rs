@@ -4,7 +4,6 @@ use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
 use egui::{Color32, RichText};
-use egui_modal::Modal;
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
@@ -71,6 +70,10 @@ impl AnnatomicApp {
     pub fn new(cc: &eframe::CreationContext<'_>, args: AnnatomicArgs) -> Result<Self> {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+        let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+
+        cc.egui_ctx.set_fonts(fonts);
 
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
@@ -91,49 +94,37 @@ impl AnnatomicApp {
     }
 
     fn handle_corpus_confirmation_dialog(&mut self, ctx: &egui::Context) {
-        let modal = Modal::new(ctx, "corpus_deletion_confirmation");
-        if modal.is_open() {
-            modal.show(|ui| {
+        if self.project.scheduled_for_deletion.is_some() {
+            egui::Modal::new("corpus_deletion_confirmation".into()).show(ctx, |ui| {
                 let corpus_name = self
                     .project
                     .scheduled_for_deletion
                     .clone()
                     .unwrap_or_default();
-                modal.title(ui, format!("Confirm deletion of \"{corpus_name}\""));
-                modal.frame(ui, |ui| {
-                    modal.body_and_icon(
-                        ui,
-                        "Are you sure to delete the corpus permanently?",
-                        egui_modal::Icon::Warning,
-                    );
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(egui_phosphor::regular::WARNING).color(Color32::ORANGE).size(32.0));
+                    ui.label(format!("Are you sure to delete the corpus \"{corpus_name}\" permanently? This can not be undone."));
                 });
-                modal.buttons(ui, |ui| {
-                    if modal
-                        .button(
-                            ui,
-                            RichText::new("Do not delete the corpus.").color(Color32::BLUE),
-                        )
+                ui.separator();
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(RichText::new("Do not delete the corpus.").color(Color32::BLUE))
                         .clicked()
                     {
                         self.project.scheduled_for_deletion = None;
-                        modal.close();
                     }
-                    if modal
+                    ui.add_space(5.0);
+                    if ui
                         .button(
-                            ui,
                             RichText::new(format!("Delete \"{corpus_name}\" permanently"))
                                 .color(Color32::RED),
                         )
                         .clicked()
                     {
                         self.project.delete_corpus(&self.jobs, corpus_name);
-                        modal.close();
                     }
                 });
             });
-        }
-        if self.project.scheduled_for_deletion.is_some() {
-            modal.open();
         }
     }
 }
