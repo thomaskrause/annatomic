@@ -137,3 +137,6 @@ fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
         ui.label("Select a corpus to edit it.");
     }
 }
+
+#[cfg(test)]
+mod tests;
