@@ -21,7 +21,7 @@ jobs:
           toolchain: nightly
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - run: sudo apt-get install libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+      - run: sudo apt-get install libvulkan1 libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
       - name: Generate code coverage
         run: cargo llvm-cov --all-features --ignore-filename-regex 'tests?\.rs'  --codecov --output-path codecov.json
       - name: Upload coverage to Codecov
