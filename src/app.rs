@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
-use egui::{Color32, RichText};
+use egui::{Button, Color32, Key, KeyboardShortcut, Modifiers, RichText};
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
@@ -16,6 +16,7 @@ mod project;
 mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
+pub const QUIT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);
 
 /// Which main view to show in the app
 #[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
@@ -141,6 +142,10 @@ impl eframe::App for AnnatomicApp {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
+        if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        };
+
         self.handle_corpus_confirmation_dialog(ctx);
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -149,7 +154,10 @@ impl eframe::App for AnnatomicApp {
             egui::menu::bar(ui, |ui| {
                 ui.image(egui::include_image!("../assets/icon-32.png"));
                 ui.menu_button("File", |ui| {
-                    if ui.button("Quit").clicked() {
+                    if ui
+                        .add(Button::new("Quit").shortcut_text(ctx.format_shortcut(&QUIT_SHORTCUT)))
+                        .clicked()
+                    {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
