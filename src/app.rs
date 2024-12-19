@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
+use eframe::IntegrationInfo;
 use egui::{Button, Color32, Key, KeyboardShortcut, Modifiers, RichText};
 use job_executor::JobExecutor;
 use messages::Notifier;
@@ -13,6 +14,8 @@ mod corpus_tree;
 mod job_executor;
 mod messages;
 mod project;
+#[cfg(test)]
+mod tests;
 mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
@@ -128,16 +131,8 @@ impl AnnatomicApp {
             });
         }
     }
-}
 
-impl eframe::App for AnnatomicApp {
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
-    }
-
-    /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    pub(crate) fn show(&mut self, ctx: &egui::Context, frame_info: &IntegrationInfo) {
         egui_extras::install_image_loaders(ctx);
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
@@ -166,7 +161,7 @@ impl eframe::App for AnnatomicApp {
                 });
                 ui.add_space(16.0);
                 if self.args.dev {
-                    if let Some(seconds) = frame.info().cpu_usage {
+                    if let Some(seconds) = frame_info.cpu_usage {
                         ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
                         ui.add_space(16.0);
                     }
@@ -189,5 +184,17 @@ impl eframe::App for AnnatomicApp {
                 }
             }
         });
+    }
+}
+
+impl eframe::App for AnnatomicApp {
+    /// Called by the frame work to save state before shutdown.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, eframe::APP_KEY, self);
+    }
+
+    /// Called each time the UI needs repainting, which may be many times per second.
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.show(ctx, frame.info());
     }
 }

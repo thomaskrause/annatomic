@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use egui::{CentralPanel, Context};
+use egui::Context;
 use egui_kittest::Harness;
-use graphannis::corpusstorage::ImportFormat;
+use graphannis::{corpusstorage::ImportFormat, CorpusStorage};
 
 use super::*;
 
 #[test]
-fn start_view() {
+fn show_main_page() {
     let mut state = crate::AnnatomicApp::default();
     let test_cs_db = tempfile::TempDir::new().unwrap();
     let cs = CorpusStorage::with_auto_cache_size(test_cs_db.path(), true).unwrap();
@@ -33,9 +33,10 @@ fn start_view() {
     state.project.load_after_init(&state.jobs).unwrap();
 
     let app = |ctx: &Context| {
-        CentralPanel::default().show(ctx, |ui| {
-            show(ui, &mut state).unwrap();
-        });
+        let frame_info = IntegrationInfo {
+            cpu_usage: Some(3.14),
+        };
+        state.show(ctx, &frame_info);
     };
 
     let mut harness = Harness::builder()
@@ -43,5 +44,5 @@ fn start_view() {
         .build(app);
     harness.run();
 
-    harness.wgpu_snapshot("start_view");
+    harness.wgpu_snapshot("show_main_page");
 }
