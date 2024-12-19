@@ -1,37 +1,39 @@
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  merge_group:
 
-name: CI
-
-env:
-  RUSTFLAGS: -D warnings
-  RUSTDOCFLAGS: -D warnings
+name: Rust
 
 jobs:
-  check:
-    name: Check
+  format:
+    name: Format Code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.4.4
+      - uses: mbrobbel/rustfmt-check@0.12.0
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --all-features
-
-  test:
-    name: Test Suite
+          token: ${{ secrets.GITHUB_TOKEN }}
+  static_code_analysis:
+    name: Static code analysis
+    needs: format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.4.4
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
+          components: clippy
+      - name: Check code without default features
+        run: cargo check --no-default-features
+      - name: Check with clippy with all features enabled
+        run: cargo clippy --all-features -- -D warnings
+  unit-tests:
+    env:
+      RUST_BACKTRACE: 0
+    name: Unit tests
+    needs: format
+    runs-on: ubuntu-latest
+    steps:
       - name: Install packages (Linux)
         if: runner.os == 'Linux'
         uses: awalsh128/cache-apt-pkgs-action@v1.4.2
@@ -43,35 +45,7 @@ jobs:
         with:
           command: test
           args: --lib
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.4.4
+      - name: Run unit tests
+        run: cargo test
