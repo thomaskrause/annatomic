@@ -1,0 +1,29 @@
+accepted = [
+  "0BSD",
+  "Apache-2.0 WITH LLVM-exception",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "OpenSSL",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[epaint_default_fonts]
+accepted = ["Ubuntu-font-1.0", "OFL-1.1"]
+
+[epaint_default_fonts.clarify]
+license = "(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0"
+
+[[epaint_default_fonts.clarify.files]]
+checksum = "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+path = "fonts/OFL.txt"
+
+[[epaint_default_fonts.clarify.files]]
+checksum = "2f0015108d68627bd788d313f529c21ff4da2c2c42a5e1f3883acc83480f9002"
+path = "fonts/UFL.txt"
