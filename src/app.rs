@@ -153,6 +153,9 @@ impl eframe::App for AnnatomicApp {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
+                ui.menu_button("View", |ui| {
+                    egui::gui_zoom::zoom_menu_buttons(ui);
+                });
                 ui.add_space(16.0);
                 if self.args.dev {
                     if let Some(seconds) = frame.info().cpu_usage {
