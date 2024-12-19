@@ -147,7 +147,7 @@ impl eframe::App for AnnatomicApp {
             // The top panel is often a good place for a menu bar:
 
             egui::menu::bar(ui, |ui| {
-                ui.image(egui::include_image!("../assets/icon-16.png"));
+                ui.image(egui::include_image!("../assets/icon-32.png"));
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
