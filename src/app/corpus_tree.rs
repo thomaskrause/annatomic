@@ -1,11 +1,14 @@
 use std::sync::{Arc, RwLock};
 
 use anyhow::{anyhow, Context};
-use egui::{Button, CollapsingHeader, RichText, ScrollArea, Ui};
+use egui::{
+    ahash::{HashSet, HashSetExt},
+    Button, CollapsingHeader, RichText, ScrollArea, Ui,
+};
 use egui_extras::Column;
 use egui_notify::Toast;
 use graphannis::{
-    graph::{Edge, NodeID, WriteableGraphStorage},
+    graph::{AnnoKey, Edge, NodeID, WriteableGraphStorage},
     model::{AnnotationComponent, AnnotationComponentType::PartOf},
     update::{
         GraphUpdate,
@@ -35,7 +38,7 @@ pub(crate) struct CorpusTree {
     gs: Box<dyn WriteableGraphStorage>,
     graph: Arc<RwLock<AnnotationGraph>>,
     notifier: Arc<Notifier>,
-    metadata_changed: bool,
+    metadata_changed: HashSet<AnnoKey>,
 }
 
 impl CorpusTree {
@@ -75,7 +78,7 @@ impl CorpusTree {
 
         Ok(Self {
             selected_corpus_node: None,
-            metadata_changed: false,
+            metadata_changed: HashSet::new(),
             current_node_annos: Vec::new(),
             gs: Box::new(inverted_corpus_graph),
             graph,
@@ -128,17 +131,26 @@ impl CorpusTree {
                                     .text_edit_singleline(&mut entry.current_namespace)
                                     .changed()
                                 {
-                                    self.metadata_changed = true;
+                                    self.metadata_changed.insert(AnnoKey {
+                                        ns: entry.original_namespace.clone().into(),
+                                        name: entry.original_name.clone().into(),
+                                    });
                                 }
                             });
                             row.col(|ui| {
                                 if ui.text_edit_singleline(&mut entry.current_name).changed() {
-                                    self.metadata_changed = true;
+                                    self.metadata_changed.insert(AnnoKey {
+                                        ns: entry.original_namespace.clone().into(),
+                                        name: entry.original_name.clone().into(),
+                                    });
                                 }
                             });
                             row.col(|ui| {
                                 if ui.text_edit_singleline(&mut entry.current_value).changed() {
-                                    self.metadata_changed = true;
+                                    self.metadata_changed.insert(AnnoKey {
+                                        ns: entry.original_namespace.clone().into(),
+                                        name: entry.original_name.clone().into(),
+                                    });
                                 }
                             });
                         });
@@ -146,7 +158,10 @@ impl CorpusTree {
                 });
 
             if ui
-                .add_enabled(self.metadata_changed, Button::new("Apply Updates"))
+                .add_enabled(
+                    !self.metadata_changed.is_empty(),
+                    Button::new("Apply Updates"),
+                )
                 .clicked()
             {
                 let graph = self.graph.read().unwrap();
@@ -159,24 +174,31 @@ impl CorpusTree {
                     .unwrap_or_default();
                 // apply all changes as updates to our internal corpus graph
                 let mut update = GraphUpdate::new();
+
                 for entry in self.current_node_annos.iter_mut() {
-                    let result = update.add_event(DeleteNodeLabel {
-                        node_name: parent_node_name.clone().into(),
-                        anno_ns: entry.original_namespace.clone(),
-                        anno_name: entry.original_name.clone(),
-                    });
-                    self.notifier
-                        .report_result(result.context("Could not add graph update"));
-                    let result = update.add_event(AddNodeLabel {
-                        node_name: parent_node_name.clone().into(),
-                        anno_ns: entry.current_namespace.clone(),
-                        anno_name: entry.current_name.clone(),
-                        anno_value: entry.current_value.clone(),
-                    });
-                    self.notifier
-                        .report_result(result.context("Could not add graph update"));
-                    entry.original_namespace = entry.current_namespace.clone();
-                    entry.original_name = entry.current_name.clone();
+                    let anno_key = AnnoKey {
+                        ns: entry.original_namespace.clone().into(),
+                        name: entry.original_name.clone().into(),
+                    };
+                    if self.metadata_changed.remove(&anno_key) {
+                        let result = update.add_event(DeleteNodeLabel {
+                            node_name: parent_node_name.clone().into(),
+                            anno_ns: entry.original_namespace.clone(),
+                            anno_name: entry.original_name.clone(),
+                        });
+                        self.notifier
+                            .report_result(result.context("Could not add graph update"));
+                        let result = update.add_event(AddNodeLabel {
+                            node_name: parent_node_name.clone().into(),
+                            anno_ns: entry.current_namespace.clone(),
+                            anno_name: entry.current_name.clone(),
+                            anno_value: entry.current_value.clone(),
+                        });
+                        self.notifier
+                            .report_result(result.context("Could not add graph update"));
+                        entry.original_namespace = entry.current_namespace.clone();
+                        entry.original_name = entry.current_name.clone();
+                    }
                 }
 
                 project.add_changeset(jobs, update);
@@ -203,7 +225,7 @@ impl CorpusTree {
         self.selected_corpus_node = selection;
         if let Some(parent) = self.selected_corpus_node {
             self.current_node_annos.clear();
-            self.metadata_changed = false;
+            self.metadata_changed.clear();
             let graph = self.graph.read().unwrap();
             let anno_keys = graph
                 .get_node_annos()
