@@ -46,13 +46,16 @@ impl CorpusTree {
         // Create our own graph storage with inverted edges
         let mut inverted_corpus_graph = AdjacencyListStorage::new();
         {
+            let part_of_component = AnnotationComponent::new(PartOf, ANNIS_NS.into(), "".into());
+            {
+                let mut graph = graph.write().map_err(|e| anyhow!("{e}"))?;
+
+                graph.ensure_loaded(&part_of_component)?;
+            }
             let graph = graph.read().map_err(|e| anyhow!("{e}"))?;
+
             let partof = graph
-                .get_graphstorage(&AnnotationComponent::new(
-                    PartOf,
-                    ANNIS_NS.into(),
-                    "".into(),
-                ))
+                .get_graphstorage(&part_of_component)
                 .context("Missing PartOf component")?;
             let corpus_nodes = graph.get_node_annos().exact_anno_search(
                 Some(ANNIS_NS),
