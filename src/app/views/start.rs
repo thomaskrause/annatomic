@@ -112,7 +112,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                 app.notifier
                     .add_toast(Toast::warning("Empty corpus name not allowed"));
             } else if let Err(e) = app.project.new_empty_corpus(&app.new_corpus_name) {
-                app.notifier.report_error(e.into());
+                app.notifier.report_error(e);
             } else {
                 app.notifier.add_toast(Toast::info(format!(
                     "Corpus \"{}\" added",
