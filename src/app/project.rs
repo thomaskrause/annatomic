@@ -5,7 +5,10 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
-use graphannis::{update::GraphUpdate, AnnotationGraph};
+use graphannis::{
+    update::{GraphUpdate, UpdateEvent},
+    AnnotationGraph,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -15,6 +18,7 @@ use super::{job_executor::JobExecutor, CorpusTree, Notifier, APP_ID};
 pub(crate) struct SelectedCorpus {
     pub(crate) name: String,
     pub(crate) location: PathBuf,
+    diff_to_last_save: Vec<UpdateEvent>,
     #[serde(skip)]
     graph: Option<Arc<RwLock<AnnotationGraph>>>,
 }
@@ -102,6 +106,16 @@ impl Project {
     }
 
     pub(crate) fn select_corpus(&mut self, jobs: &JobExecutor, selection: Option<String>) {
+        // Do nothing if the corpus is already selected
+        if self
+            .selected_corpus
+            .as_ref()
+            .and_then(|s| Some(s.name.clone()))
+            == selection
+        {
+            return;
+        }
+
         self.selected_corpus = if let Some(name) = selection {
             self.corpus_locations
                 .get(&name)
@@ -109,6 +123,7 @@ impl Project {
                     graph: None,
                     name,
                     location: location.clone(),
+                    diff_to_last_save: Vec::default(),
                 })
         } else {
             None
@@ -133,11 +148,19 @@ impl Project {
                     jobs.add(
                         "Updating corpus",
                         move |job| {
+                            let mut added_events = Vec::with_capacity(update.len()?);
+                            for event in update.iter()? {
+                                let event = event?;
+                                added_events.push(event.1);
+                            }
                             let mut graph = graph.write().map_err(|e| anyhow!("{e}"))?;
                             graph.apply_update(&mut update, |msg| job.update_message(msg))?;
-                            Ok(())
+                            Ok(added_events)
                         },
-                        |_result, app| {
+                        |added_events, app| {
+                            if let Some(selected_corpus) = &mut app.project.selected_corpus {
+                                selected_corpus.diff_to_last_save.extend(added_events);
+                            }
                             app.project.updates_pending = false;
                             app.project.schedule_corpus_tree_update(&app.jobs);
                         },
