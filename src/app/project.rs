@@ -138,36 +138,38 @@ impl Project {
     }
 
     fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
-        if let Some(selected_corpus) = &mut self.selected_corpus {
-            match selected_corpus.ensure_graph_loaded() {
-                Ok(graph) => {
-                    // Run a background job that creates the new corpus structure
-                    let job_title =
-                        format!("Updating corpus structure for {}", &selected_corpus.name);
+        let selected_corpus = self.selected_corpus.clone();
 
-                    let notifier = self.notifier.clone();
-                    jobs.add(
-                        &job_title,
-                        move |_job| {
-                            let corpus_tree =
-                                CorpusTree::create_from_graph(graph.clone(), notifier)?;
-                            Ok(corpus_tree)
-                        },
-                        |mut result, app| {
-                            // Keep the selected corpus node
-                            let old_selection = app
-                                .corpus_tree
-                                .as_ref()
-                                .and_then(|ct| ct.selected_corpus_node);
-                            result.select_corpus_node(old_selection);
-                            app.corpus_tree = Some(result);
-                        },
-                    );
+        let notifier = self.notifier.clone();
+        jobs.add(
+            "Updating corpus selection",
+            |job| {
+                if let Some(mut selected_corpus) = selected_corpus {
+                    job.update_message("Loading corpus from disk");
+                    let graph = selected_corpus.ensure_graph_loaded()?;
+                    job.update_message("Updating corpus structure");
+                    let corpus_tree = CorpusTree::create_from_graph(graph.clone(), notifier)?;
+                    Ok(Some(corpus_tree))
+                } else {
+                    Ok(None)
                 }
-                Err(err) => {
-                    self.notifier.report_error(err);
+            },
+            |result, app| {
+                // Drop any old corpus tree in a background thread.
+                // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
+                let old_corpus_tree = app.corpus_tree.take();
+                rayon::spawn(move || std::mem::drop(old_corpus_tree));
+
+                if let Some(mut corpus_tree) = result {
+                    // Keep the selected corpus node
+                    let old_selection = app
+                        .corpus_tree
+                        .as_ref()
+                        .and_then(|ct| ct.selected_corpus_node);
+                    corpus_tree.select_corpus_node(old_selection);
+                    app.corpus_tree = Some(corpus_tree);
                 }
-            }
-        }
+            },
+        );
     }
 }
