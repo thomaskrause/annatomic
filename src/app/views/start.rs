@@ -1,28 +1,22 @@
-use std::sync::Arc;
+use std::fs::File;
 
 use crate::{app::MainView, AnnatomicApp};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use egui::{TextEdit, Ui};
 use egui_notify::Toast;
-use graphannis::{corpusstorage::CorpusInfo, CorpusStorage};
+use graphannis::model::AnnotationComponentType;
 
 use rfd::FileDialog;
 
 pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
-    let cs = app
-        .project
-        .corpus_storage
-        .as_ref()
-        .context("Missing corpus storage")?
-        .clone();
-    let corpora = cs.list()?;
+    let corpora: Vec<_> = app.project.corpus_locations.keys().cloned().collect();
 
     ui.columns_const(|[c1, c2, c3, c4]| {
         if let Err(e) = corpus_selection(c1, app, &corpora) {
             app.notifier.report_error(e);
         }
-        import_corpus(c2, app, cs.clone());
-        create_new_corpus(c3, app, cs.clone());
+        import_corpus(c2, app);
+        create_new_corpus(c3, app);
         demo_link(c4, app);
     });
     corpus_structure(ui, app);
@@ -30,7 +24,7 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     Ok(())
 }
 
-fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo]) -> Result<()> {
+fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[String]) -> Result<()> {
     ui.vertical_centered(|ui| {
         ui.heading("Select");
 
@@ -40,11 +34,11 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
                     .project
                     .selected_corpus
                     .as_ref()
-                    .is_some_and(|selected_corpus| selected_corpus.name == c.name);
-                let label = ui.selectable_label(is_selected, &c.name);
+                    .is_some_and(|selected_corpus| &selected_corpus.name == c);
+                let label = ui.selectable_label(is_selected, c);
                 label.context_menu(|ui| {
                     if ui.button("Delete").clicked() {
-                        app.project.scheduled_for_deletion = Some(c.name.clone());
+                        app.project.scheduled_for_deletion = Some(c.clone());
                     }
                 });
                 if label.clicked() {
@@ -53,7 +47,7 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
                         app.project.select_corpus(&app.jobs, None);
                     } else {
                         // Select this corpus
-                        app.project.select_corpus(&app.jobs, Some(c.name.clone()));
+                        app.project.select_corpus(&app.jobs, Some(c.clone()));
                     }
                 }
             }
@@ -62,32 +56,43 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[CorpusInfo])
     Ok(())
 }
 
-fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
+fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
     ui.vertical_centered(|ui| {
         ui.heading("Import");
         if ui.button("Choose file...").clicked() {
-            let dlg = FileDialog::new()
-                .add_filter("GraphML (*.graphml)", &["graphml"])
-                .add_filter("Zipped GraphML (*.zip)", &["zip"]);
+            let dlg = FileDialog::new().add_filter("GraphML (*.graphml)", &["graphml"]);
             if let Some(path) = dlg.pick_file() {
                 let job_title = format!("Importing {}", path.to_string_lossy());
+                let parent_dir = app.project.corpus_storage_dir();
                 app.jobs.add(
                     &job_title,
                     move |job| {
-                        let name = cs.import_from_fs(
-                            &path,
-                            graphannis::corpusstorage::ImportFormat::GraphML,
-                            None,
-                            false,
-                            false,
-                            |msg| {
-                                job.update_message(msg);
-                            },
-                        )?;
-                        Ok(name)
+                        let corpus_name = if let Some(file_name) = path.file_stem() {
+                            file_name.to_string_lossy().to_string()
+                        } else {
+                            "UnknownCorpus".to_string()
+                        };
+                        let input_file = File::open(path)?;
+                        let (mut graph, _config_str) =
+                            graphannis_core::graph::serialization::graphml::import::<
+                                AnnotationComponentType,
+                                _,
+                                _,
+                            >(input_file, false, |status| {
+                                job.update_message(status);
+                            })?;
+
+                        let location = parent_dir?.join(uuid::Uuid::new_v4().to_string());
+                        std::fs::create_dir_all(&location)?;
+
+                        job.update_message("Persisting corpus");
+                        graph.persist_to(&location)?;
+
+                        Ok((corpus_name, location))
                     },
-                    |result, app| {
-                        app.project.select_corpus(&app.jobs, Some(result));
+                    |(name, location), app| {
+                        app.project.corpus_locations.insert(name.clone(), location);
+                        app.project.select_corpus(&app.jobs, Some(name));
                     },
                 );
             }
@@ -95,7 +100,7 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
     });
 }
 
-fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>) {
+fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
     ui.vertical_centered(|ui| {
         let heading = ui.heading("Create new");
         let edit = TextEdit::singleline(&mut app.new_corpus_name)
@@ -106,7 +111,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp, cs: Arc<CorpusStorage>
             if app.new_corpus_name.is_empty() {
                 app.notifier
                     .add_toast(Toast::warning("Empty corpus name not allowed"));
-            } else if let Err(e) = cs.create_empty_corpus(&app.new_corpus_name, false) {
+            } else if let Err(e) = app.project.new_empty_corpus(&app.new_corpus_name) {
                 app.notifier.report_error(e.into());
             } else {
                 app.notifier.add_toast(Toast::info(format!(

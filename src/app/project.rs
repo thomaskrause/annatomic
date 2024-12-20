@@ -1,8 +1,13 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
-use anyhow::Context;
-use graphannis::{update::GraphUpdate, AnnotationGraph, CorpusStorage};
+use anyhow::{anyhow, Context};
+use graphannis::{update::GraphUpdate, AnnotationGraph};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::{job_executor::JobExecutor, CorpusTree, Notifier, APP_ID};
 
@@ -11,7 +16,23 @@ pub(crate) struct SelectedCorpus {
     pub(crate) name: String,
     pub(crate) location: PathBuf,
     #[serde(skip)]
-    pub(crate) graph: Option<Arc<AnnotationGraph>>,
+    pub(crate) graph: Option<Arc<RwLock<AnnotationGraph>>>,
+}
+
+impl SelectedCorpus {
+    fn ensure_graph_loaded(&mut self) -> anyhow::Result<Arc<RwLock<AnnotationGraph>>> {
+        if let Some(graph) = &self.graph {
+            Ok(graph.clone())
+        } else {
+            // Load the corpus from the location
+            let mut graph = AnnotationGraph::new(false)?;
+            graph.load_from(&self.location, true)?;
+            let graph = RwLock::new(graph);
+            let graph = Arc::new(graph);
+            self.graph = Some(graph.clone());
+            Ok(graph)
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -20,8 +41,6 @@ pub(crate) struct Project {
     pub(crate) selected_corpus: Option<SelectedCorpus>,
     pub(crate) scheduled_for_deletion: Option<String>,
     pub(crate) corpus_locations: BTreeMap<String, PathBuf>,
-    #[serde(skip)]
-    pub(super) corpus_storage: Option<Arc<CorpusStorage>>,
     #[serde(skip)]
     notifier: Arc<Notifier>,
 }
@@ -32,19 +51,28 @@ impl Project {
             updates_pending: false,
             selected_corpus: None,
             scheduled_for_deletion: None,
-            corpus_storage: None,
             corpus_locations: BTreeMap::new(),
             notifier,
         }
     }
 
+    pub(crate) fn corpus_storage_dir(&self) -> anyhow::Result<PathBuf> {
+        let result = eframe::storage_dir(APP_ID)
+            .context("Unable to get local file storage path")
+            .map(|p| p.join("corpora"))?;
+        Ok(result)
+    }
+
     pub(crate) fn delete_corpus(&mut self, jobs: &JobExecutor, corpus_name: String) {
-        if let Some(cs) = self.corpus_storage.as_ref().cloned() {
-            let title = format!("Deleting corpus \"{corpus_name}\"");
+        if let Some(location) = self.corpus_locations.remove(&corpus_name) {
+            let title = format!(
+                "Deleting corpus \"{corpus_name}\" from {}",
+                location.to_string_lossy()
+            );
             jobs.add(
                 &title,
                 move |_job| {
-                    cs.delete(&corpus_name)?;
+                    std::fs::remove_dir_all(location)?;
                     Ok(())
                 },
                 |_result, _app| {},
@@ -55,35 +83,38 @@ impl Project {
 
     pub(crate) fn select_corpus(&mut self, jobs: &JobExecutor, selection: Option<String>) {
         self.selected_corpus = if let Some(name) = selection {
-            let location = eframe::storage_dir(APP_ID)
-                .context("Unable to get local file storage path")
-                .map(|p| p.join("db").join(&name));
-            match location {
-                Ok(location) => Some(SelectedCorpus {
+            self.corpus_locations
+                .get(&name)
+                .map(|location| SelectedCorpus {
                     graph: None,
                     name,
-                    location,
-                }),
-                Err(e) => {
-                    self.notifier.report_error(e.into());
-                    None
-                }
-            }
+                    location: location.clone(),
+                })
         } else {
             None
         };
         self.schedule_corpus_tree_update(jobs);
     }
 
+    pub(crate) fn new_empty_corpus(&mut self, name: &str) -> anyhow::Result<()> {
+        let id = Uuid::new_v4();
+        let location = self.corpus_storage_dir()?.join(id.to_string());
+        let mut graph = AnnotationGraph::with_default_graphstorages(false)?;
+        graph.persist_to(&location)?;
+        self.corpus_locations.insert(name.to_string(), location);
+        Ok(())
+    }
+
     pub(crate) fn add_changeset(&mut self, jobs: &JobExecutor, mut update: GraphUpdate) {
-        if let Some(selected_corpus) = self.selected_corpus.clone() {
-            match self.ensure_corpus_storage_loaded() {
-                Ok(cs) => {
+        if let Some(selected_corpus) = &mut self.selected_corpus {
+            match selected_corpus.ensure_graph_loaded() {
+                Ok(graph) => {
                     self.updates_pending = true;
                     jobs.add(
                         "Updating corpus",
-                        move |_job| {
-                            cs.apply_update(&selected_corpus.name, &mut update)?;
+                        move |job| {
+                            let mut graph = graph.write().map_err(|e| anyhow!("{e}"))?;
+                            graph.apply_update(&mut update, |msg| job.update_message(msg))?;
                             Ok(())
                         },
                         |_result, app| {
@@ -99,29 +130,17 @@ impl Project {
 
     /// Rebuild the state that is not persisted but calculated
     pub(crate) fn load_after_init(&mut self, jobs: &JobExecutor) -> anyhow::Result<()> {
-        self.ensure_corpus_storage_loaded()?;
+        if let Some(selected_corpus) = &mut self.selected_corpus {
+            selected_corpus.ensure_graph_loaded()?;
+        }
         self.schedule_corpus_tree_update(jobs);
         Ok(())
     }
 
-    fn ensure_corpus_storage_loaded(&mut self) -> anyhow::Result<Arc<CorpusStorage>> {
-        if let Some(cs) = &self.corpus_storage {
-            Ok(cs.clone())
-        } else {
-            let parent_path =
-                eframe::storage_dir(APP_ID).context("Unable to get local file storage path")?;
-            // Attempt to create a corpus storage and remember it
-            let cs = CorpusStorage::with_auto_cache_size(&parent_path.join("db"), true)?;
-            let cs = Arc::new(cs);
-            self.corpus_storage = Some(cs.clone());
-            Ok(cs)
-        }
-    }
-
     fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
-        match self.ensure_corpus_storage_loaded() {
-            Ok(cs) => {
-                if let Some(selected_corpus) = self.selected_corpus.clone() {
+        if let Some(selected_corpus) = &mut self.selected_corpus {
+            match selected_corpus.ensure_graph_loaded() {
+                Ok(graph) => {
                     // Run a background job that creates the new corpus structure
                     let job_title =
                         format!("Updating corpus structure for {}", &selected_corpus.name);
@@ -130,11 +149,8 @@ impl Project {
                     jobs.add(
                         &job_title,
                         move |_job| {
-                            let corpus_tree = CorpusTree::create_from_graphstorage(
-                                cs,
-                                &selected_corpus.name,
-                                notifier,
-                            )?;
+                            let corpus_tree =
+                                CorpusTree::create_from_graph(graph.clone(), notifier)?;
                             Ok(corpus_tree)
                         },
                         |mut result, app| {
@@ -148,9 +164,9 @@ impl Project {
                         },
                     );
                 }
-            }
-            Err(err) => {
-                self.notifier.report_error(err);
+                Err(err) => {
+                    self.notifier.report_error(err);
+                }
             }
         }
     }
