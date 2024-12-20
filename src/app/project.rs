@@ -37,7 +37,7 @@ impl SelectedCorpus {
         } else {
             // Load the corpus from the location
             let mut graph = AnnotationGraph::new(false)?;
-            graph.load_from(&self.location, true)?;
+            graph.load_from(&self.location, false)?;
             let graph = RwLock::new(graph);
             let graph = Arc::new(graph);
             self.graph = Some(graph.clone());
