@@ -53,7 +53,7 @@ impl JobExecutor {
         {
             if let Ok(mut lock) = running_jobs.write() {
                 lock.insert(title.to_string(), single_job.clone());
-                debug!("Number ofcurrently running jobs: {}", lock.len());
+                debug!("Number of currently running jobs: {}", lock.len());
             }
         }
         let title = title.to_string();
@@ -88,6 +88,7 @@ impl JobExecutor {
                 app.notifier.report_error(e);
             }
         }
+
         if let Ok(mut finished_jobs) = self.finished.write() {
             while let Some(j) = finished_jobs.pop_first() {
                 j.1(app);
