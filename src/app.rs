@@ -134,56 +134,63 @@ impl AnnatomicApp {
 
     pub(crate) fn show(&mut self, ctx: &egui::Context, frame_info: &IntegrationInfo) {
         egui_extras::install_image_loaders(ctx);
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
 
-        if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        };
-
-        self.handle_corpus_confirmation_dialog(ctx);
-
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
-
-            egui::menu::bar(ui, |ui| {
-                ui.image(egui::include_image!("../assets/icon-32.png"));
-                ui.menu_button("File", |ui| {
-                    if ui
-                        .add(Button::new("Quit").shortcut_text(ctx.format_shortcut(&QUIT_SHORTCUT)))
-                        .clicked()
-                    {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-                ui.menu_button("View", |ui| {
-                    egui::gui_zoom::zoom_menu_buttons(ui);
-                });
-                ui.add_space(16.0);
-                if self.args.dev {
-                    if let Some(seconds) = frame_info.cpu_usage {
-                        ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
-                        ui.add_space(16.0);
-                    }
-                }
-
-                egui::widgets::global_theme_preference_switch(ui);
+        if ctx.input(|input_state| input_state.viewport().close_requested()) {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.heading("Closing application...");
+                ui.label("Please wait for any background jobs to finish.");
             });
-        });
+        } else {
+            if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            };
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let has_jobs = self.jobs.clone().show(ui, self);
-            if !has_jobs {
-                self.notifier.show(ctx);
-                let response = match self.main_view {
-                    MainView::Start => views::start::show(ui, self),
-                    MainView::Demo => views::demo::show(ui, self),
-                };
-                if let Err(e) = response {
-                    self.notifier.report_error(e);
+            self.handle_corpus_confirmation_dialog(ctx);
+            egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+                // The top panel is often a good place for a menu bar:
+
+                egui::menu::bar(ui, |ui| {
+                    ui.image(egui::include_image!("../assets/icon-32.png"));
+                    ui.menu_button("File", |ui| {
+                        if ui
+                            .add(
+                                Button::new("Quit")
+                                    .shortcut_text(ctx.format_shortcut(&QUIT_SHORTCUT)),
+                            )
+                            .clicked()
+                        {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    });
+                    ui.menu_button("View", |ui| {
+                        egui::gui_zoom::zoom_menu_buttons(ui);
+                    });
+                    ui.add_space(16.0);
+                    if self.args.dev {
+                        if let Some(seconds) = frame_info.cpu_usage {
+                            ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
+                            ui.add_space(16.0);
+                        }
+                    }
+
+                    egui::widgets::global_theme_preference_switch(ui);
+                });
+            });
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let has_jobs = self.jobs.clone().show(ui, self);
+                if !has_jobs {
+                    self.notifier.show(ctx);
+                    let response = match self.main_view {
+                        MainView::Start => views::start::show(ui, self),
+                        MainView::Demo => views::demo::show(ui, self),
+                    };
+                    if let Err(e) = response {
+                        self.notifier.report_error(e);
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 }
 

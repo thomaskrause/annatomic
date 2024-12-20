@@ -16,11 +16,22 @@ pub(crate) struct SelectedCorpus {
     pub(crate) name: String,
     pub(crate) location: PathBuf,
     #[serde(skip)]
-    pub(crate) graph: Option<Arc<RwLock<AnnotationGraph>>>,
+    graph: Option<Arc<RwLock<AnnotationGraph>>>,
+}
+
+impl PartialEq for SelectedCorpus {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.location == other.location
+    }
 }
 
 impl SelectedCorpus {
-    fn ensure_graph_loaded(&mut self) -> anyhow::Result<Arc<RwLock<AnnotationGraph>>> {
+    /// Gets the graph for this selected corpus.
+    ///
+    /// The first call might take some time because the graph needs to be loaded
+    /// from disk. Later calls are cached and are faster, but you should make
+    /// sure to not call this function in a blocking environment.
+    fn graph(&mut self) -> anyhow::Result<Arc<RwLock<AnnotationGraph>>> {
         if let Some(graph) = &self.graph {
             Ok(graph.clone())
         } else {
@@ -35,7 +46,7 @@ impl SelectedCorpus {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct Project {
     updates_pending: bool,
     pub(crate) selected_corpus: Option<SelectedCorpus>,
@@ -43,6 +54,15 @@ pub(crate) struct Project {
     pub(crate) corpus_locations: BTreeMap<String, PathBuf>,
     #[serde(skip)]
     notifier: Arc<Notifier>,
+}
+
+impl PartialEq for Project {
+    fn eq(&self, other: &Self) -> bool {
+        self.updates_pending == other.updates_pending
+            && self.selected_corpus == other.selected_corpus
+            && self.scheduled_for_deletion == other.scheduled_for_deletion
+            && self.corpus_locations == other.corpus_locations
+    }
 }
 
 impl Project {
@@ -107,7 +127,7 @@ impl Project {
 
     pub(crate) fn add_changeset(&mut self, jobs: &JobExecutor, mut update: GraphUpdate) {
         if let Some(selected_corpus) = &mut self.selected_corpus {
-            match selected_corpus.ensure_graph_loaded() {
+            match selected_corpus.graph() {
                 Ok(graph) => {
                     self.updates_pending = true;
                     jobs.add(
@@ -130,9 +150,6 @@ impl Project {
 
     /// Rebuild the state that is not persisted but calculated
     pub(crate) fn load_after_init(&mut self, jobs: &JobExecutor) -> anyhow::Result<()> {
-        if let Some(selected_corpus) = &mut self.selected_corpus {
-            selected_corpus.ensure_graph_loaded()?;
-        }
         self.schedule_corpus_tree_update(jobs);
         Ok(())
     }
@@ -146,7 +163,7 @@ impl Project {
             |job| {
                 if let Some(mut selected_corpus) = selected_corpus {
                     job.update_message("Loading corpus from disk");
-                    let graph = selected_corpus.ensure_graph_loaded()?;
+                    let graph = selected_corpus.graph()?;
                     job.update_message("Updating corpus structure");
                     let corpus_tree = CorpusTree::create_from_graph(graph.clone(), notifier)?;
                     Ok(Some(corpus_tree))
