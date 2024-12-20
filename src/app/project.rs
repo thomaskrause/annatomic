@@ -1,16 +1,25 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
-use graphannis::{update::GraphUpdate, CorpusStorage};
+use graphannis::{update::GraphUpdate, AnnotationGraph, CorpusStorage};
 use serde::{Deserialize, Serialize};
 
 use super::{job_executor::JobExecutor, CorpusTree, Notifier, APP_ID};
 
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct SelectedCorpus {
+    pub(crate) name: String,
+    pub(crate) location: PathBuf,
+    #[serde(skip)]
+    pub(crate) graph: Option<Arc<AnnotationGraph>>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Project {
     updates_pending: bool,
-    pub(crate) selected_corpus_name: Option<String>,
+    pub(crate) selected_corpus: Option<SelectedCorpus>,
     pub(crate) scheduled_for_deletion: Option<String>,
+    pub(crate) corpus_locations: BTreeMap<String, PathBuf>,
     #[serde(skip)]
     pub(super) corpus_storage: Option<Arc<CorpusStorage>>,
     #[serde(skip)]
@@ -21,9 +30,10 @@ impl Project {
     pub(crate) fn new(notifier: Arc<Notifier>) -> Self {
         Self {
             updates_pending: false,
-            selected_corpus_name: None,
+            selected_corpus: None,
             scheduled_for_deletion: None,
             corpus_storage: None,
+            corpus_locations: BTreeMap::new(),
             notifier,
         }
     }
@@ -44,19 +54,36 @@ impl Project {
     }
 
     pub(crate) fn select_corpus(&mut self, jobs: &JobExecutor, selection: Option<String>) {
-        self.selected_corpus_name = selection;
+        self.selected_corpus = if let Some(name) = selection {
+            let location = eframe::storage_dir(APP_ID)
+                .context("Unable to get local file storage path")
+                .map(|p| p.join("db").join(&name));
+            match location {
+                Ok(location) => Some(SelectedCorpus {
+                    graph: None,
+                    name,
+                    location,
+                }),
+                Err(e) => {
+                    self.notifier.report_error(e.into());
+                    None
+                }
+            }
+        } else {
+            None
+        };
         self.schedule_corpus_tree_update(jobs);
     }
 
     pub(crate) fn add_changeset(&mut self, jobs: &JobExecutor, mut update: GraphUpdate) {
-        if let Some(corpus_name) = self.selected_corpus_name.clone() {
+        if let Some(selected_corpus) = self.selected_corpus.clone() {
             match self.ensure_corpus_storage_loaded() {
                 Ok(cs) => {
                     self.updates_pending = true;
                     jobs.add(
                         "Updating corpus",
                         move |_job| {
-                            cs.apply_update(&corpus_name, &mut update)?;
+                            cs.apply_update(&selected_corpus.name, &mut update)?;
                             Ok(())
                         },
                         |_result, app| {
@@ -94,16 +121,20 @@ impl Project {
     fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
         match self.ensure_corpus_storage_loaded() {
             Ok(cs) => {
-                if let Some(corpus_name) = self.selected_corpus_name.clone() {
+                if let Some(selected_corpus) = self.selected_corpus.clone() {
                     // Run a background job that creates the new corpus structure
-                    let job_title = format!("Updating corpus structure for {}", &corpus_name);
+                    let job_title =
+                        format!("Updating corpus structure for {}", &selected_corpus.name);
 
                     let notifier = self.notifier.clone();
                     jobs.add(
                         &job_title,
                         move |_job| {
-                            let corpus_tree =
-                                CorpusTree::create_from_graphstorage(cs, &corpus_name, notifier)?;
+                            let corpus_tree = CorpusTree::create_from_graphstorage(
+                                cs,
+                                &selected_corpus.name,
+                                notifier,
+                            )?;
                             Ok(corpus_tree)
                         },
                         |mut result, app| {
