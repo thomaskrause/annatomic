@@ -13,8 +13,9 @@ use graphannis::{
     },
     AnnotationGraph,
 };
-use graphannis_core::graph::{
-    storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY,
+use graphannis_core::{
+    annostorage::ValueSearch,
+    graph::{storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY, NODE_TYPE},
 };
 
 use super::{job_executor::JobExecutor, Notifier, Project};
@@ -53,8 +54,13 @@ impl CorpusTree {
                     "".into(),
                 ))
                 .context("Missing PartOf component")?;
-            for source in partof.source_nodes() {
-                let source = source?;
+            let corpus_nodes = graph.get_node_annos().exact_anno_search(
+                Some(ANNIS_NS),
+                NODE_TYPE,
+                ValueSearch::Some("corpus"),
+            );
+            for source in corpus_nodes {
+                let source = source?.node;
                 for target in partof.get_outgoing_edges(source) {
                     let target = target?;
                     let edge = Edge { source, target };
