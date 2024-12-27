@@ -72,19 +72,46 @@ impl Default for AnnatomicApp {
 impl AnnatomicApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>, args: AnnatomicArgs) -> Result<Self> {
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
+        // Load previous app state (if any).
+        // Note that you must enable the `persistence` feature for this to work.
+        let mut app = if let Some(storage) = cc.storage {
+            let mut app_from_storage: AnnatomicApp =
+                eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            app_from_storage.args = args;
+            app_from_storage
+        } else {
+            Self {
+                args,
+                ..Default::default()
+            }
+        };
+        // Set fonts once
+        app.set_fonts(&cc.egui_ctx);
+        // Rebuild the state that is not persisted but calculated
+        app.project.load_after_init(&app.jobs)?;
+
+        Ok(app)
+    }
+
+    pub(crate) fn set_fonts(&self, ctx: &egui::Context) {
         let mut defs = egui::FontDefinitions::default();
+        // Phosphor icons
+        egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
+
+        // Icons and Emojis
+        defs.font_data.insert(
+            "NotoEmoji-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Emoji/static/NotoEmoji-Regular.ttf"
+            ))),
+        );
+
         // Regular font
         defs.font_data.insert(
             "NotoSans-Regular".to_owned(),
             Arc::new(FontData::from_static(include_bytes!(
                 "../assets/Noto_Sans/static/NotoSans-Regular.ttf"
             ))),
-        );
-        defs.families.insert(
-            egui::FontFamily::Proportional,
-            vec!["NotoSans-Regular".to_owned()],
         );
 
         // Monospaced font
@@ -94,31 +121,20 @@ impl AnnatomicApp {
                 "../assets/Noto_Sans_Mono/static/NotoSansMono-Regular.ttf"
             ))),
         );
+
+        // Define the fonts to use for each font family
+        defs.families.insert(
+            egui::FontFamily::Proportional,
+            vec![
+                "NotoSans-Regular".to_owned(),
+                "NotoEmoji-Regular".to_owned(),
+            ],
+        );
         defs.families.insert(
             egui::FontFamily::Monospace,
             vec!["NotoSansMono-Regular".to_owned()],
         );
-        // Icons
-        egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
-
-        cc.egui_ctx.set_fonts(defs);
-
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            app.args = args;
-            app.project.load_after_init(&app.jobs)?;
-            return Ok(app);
-        }
-
-        let mut app = Self {
-            args,
-            ..Default::default()
-        };
-        app.project.load_after_init(&app.jobs)?;
-
-        Ok(app)
+        ctx.set_fonts(defs);
     }
 
     fn handle_corpus_confirmation_dialog(&mut self, ctx: &egui::Context) {

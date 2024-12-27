@@ -7,12 +7,13 @@ use super::*;
 
 #[test]
 fn show_main_page() {
-    let mut state = crate::AnnatomicApp::default();
-    state
+    let mut app_state = crate::AnnatomicApp::default();
+
+    app_state
         .project
         .corpus_locations
         .insert("single_sentence".to_string(), PathBuf::default());
-    state
+    app_state
         .project
         .corpus_locations
         .insert("test".to_string(), PathBuf::default());
@@ -21,7 +22,8 @@ fn show_main_page() {
         let frame_info = IntegrationInfo {
             cpu_usage: Some(3.14),
         };
-        state.show(ctx, &frame_info);
+        app_state.set_fonts(ctx);
+        app_state.show(ctx, &frame_info);
     };
 
     let mut harness = Harness::builder()
