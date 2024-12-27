@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
 use eframe::IntegrationInfo;
-use egui::{Button, Color32, Key, KeyboardShortcut, Modifiers, RichText};
+use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText};
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
@@ -74,10 +74,34 @@ impl AnnatomicApp {
     pub fn new(cc: &eframe::CreationContext<'_>, args: AnnatomicArgs) -> Result<Self> {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-        let mut fonts = egui::FontDefinitions::default();
-        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        let mut defs = egui::FontDefinitions::default();
+        // Regular font
+        defs.font_data.insert(
+            "NotoSans-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Sans/static/NotoSans-Regular.ttf"
+            ))),
+        );
+        defs.families.insert(
+            egui::FontFamily::Proportional,
+            vec!["NotoSans-Regular".to_owned()],
+        );
 
-        cc.egui_ctx.set_fonts(fonts);
+        // Monospaced font
+        defs.font_data.insert(
+            "NotoSansMono-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Sans_Mono/static/NotoSansMono-Regular.ttf"
+            ))),
+        );
+        defs.families.insert(
+            egui::FontFamily::Monospace,
+            vec!["NotoSansMono-Regular".to_owned()],
+        );
+        // Icons
+        egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
+
+        cc.egui_ctx.set_fonts(defs);
 
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
