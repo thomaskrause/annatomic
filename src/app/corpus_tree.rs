@@ -52,8 +52,8 @@ impl CorpusTree {
             let part_of_component = AnnotationComponent::new(PartOf, ANNIS_NS.into(), "".into());
             {
                 let mut graph = graph.write().map_err(|e| anyhow!("{e}"))?;
-
-                graph.ensure_loaded(&part_of_component)?;
+                let all_partof_components = graph.get_all_components(Some(PartOf), None);
+                graph.ensure_loaded_parallel(&all_partof_components)?;
             }
             let graph = graph.read().map_err(|e| anyhow!("{e}"))?;
 
