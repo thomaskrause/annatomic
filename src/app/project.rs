@@ -2,7 +2,12 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use cache::CorpusCache;
-use graphannis::{update::GraphUpdate, AnnotationGraph};
+use egui::util::undoer::{self, Undoer};
+use egui_notify::Toast;
+use graphannis::{
+    update::{GraphUpdate, UpdateEvent},
+    AnnotationGraph,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -10,16 +15,25 @@ use super::{job_executor::JobExecutor, CorpusTree, Notifier, APP_ID};
 
 mod cache;
 
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+pub(crate) struct Corpus {
+    pub(crate) name: String,
+    location: PathBuf,
+    diff_to_last_save: Vec<UpdateEvent>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct Project {
     updates_pending: bool,
-    pub(crate) selected_corpus: Option<String>,
+    pub(crate) selected_corpus: Option<Corpus>,
     pub(crate) scheduled_for_deletion: Option<String>,
     pub(crate) corpus_locations: BTreeMap<String, PathBuf>,
     #[serde(skip)]
     corpus_cache: CorpusCache,
     #[serde(skip)]
     notifier: Arc<Notifier>,
+    #[serde(skip)]
+    undoer: Undoer<Corpus>,
 }
 
 impl PartialEq for Project {
@@ -33,6 +47,8 @@ impl PartialEq for Project {
 
 impl Project {
     pub(crate) fn new(notifier: Arc<Notifier>) -> Self {
+        let mut undo_settings = undoer::Settings::default();
+        undo_settings.max_undos = 10;
         Self {
             updates_pending: false,
             selected_corpus: None,
@@ -40,6 +56,7 @@ impl Project {
             scheduled_for_deletion: None,
             corpus_locations: BTreeMap::new(),
             notifier,
+            undoer: Undoer::with_settings(undo_settings),
         }
     }
 
@@ -70,11 +87,26 @@ impl Project {
 
     pub(crate) fn select_corpus(&mut self, jobs: &JobExecutor, selection: Option<String>) {
         // Do nothing if the corpus is already selected
-        if self.selected_corpus == selection {
-            return;
+        if let Some(selected_corpus) = &self.selected_corpus {
+            if Some(&selected_corpus.name) == selection.as_ref() {
+                return;
+            }
         }
 
-        self.selected_corpus = selection;
+        self.selected_corpus = None;
+        if let Some(name) = selection {
+            if let Some(location) = self.corpus_locations.get(&name) {
+                self.selected_corpus = Some(Corpus {
+                    name,
+                    location: location.to_path_buf(),
+                    diff_to_last_save: Vec::new(),
+                });
+            } else {
+                self.notifier
+                    .add_toast(Toast::error(format!("Missing location for corpus {name}")));
+            }
+        }
+
         self.schedule_corpus_tree_update(jobs);
     }
 
@@ -88,31 +120,53 @@ impl Project {
     }
 
     pub(crate) fn add_changeset(&mut self, jobs: &JobExecutor, mut update: GraphUpdate) {
-        if let Some(corpus_name) = self.selected_corpus.clone() {
-            if let Some(corpus_location) = self.corpus_locations.get(&corpus_name).cloned() {
-                self.updates_pending = true;
-                let corpus_cache = self.corpus_cache.clone();
-                jobs.add(
-                    "Updating corpus",
-                    move |job| {
-                        job.update_message("Loading corpus if necessary");
-                        if let Some(graph) = corpus_cache.get(&corpus_name, &corpus_location)? {
-                            job.update_message("Applying updates");
-                            let mut graph = graph.write();
-                            graph.apply_update(&mut update, |msg| {
-                                job.update_message(format!("Applying updates: {msg}"))
-                            })?;
-                        }
+        if let Some(selected_corpus) = self.selected_corpus.clone() {
+            self.updates_pending = true;
+            let corpus_cache = self.corpus_cache.clone();
+            jobs.add(
+                "Updating corpus",
+                move |job| {
+                    job.update_message("Storing update events");
+                    let mut added_events = Vec::with_capacity(update.len()?);
+                    for event in update.iter()? {
+                        let event = event?;
+                        added_events.push(event.1);
+                    }
+                    job.update_message("Loading corpus if necessary");
+                    if let Some(graph) =
+                        corpus_cache.get(&selected_corpus.name, &selected_corpus.location)?
+                    {
+                        job.update_message("Applying updates");
+                        let mut graph = graph.write();
+                        graph.apply_update(&mut update, |msg| {
+                            job.update_message(format!("Applying updates: {msg}"))
+                        })?;
+                    }
 
-                        Ok(())
-                    },
-                    |_, app| {
-                        app.project.updates_pending = false;
-                        app.project.schedule_corpus_tree_update(&app.jobs);
-                    },
-                );
-            }
+                    Ok(added_events)
+                },
+                |added_events, app| {
+                    if let Some(selected_corpus) = &mut app.project.selected_corpus {
+                        selected_corpus.diff_to_last_save.extend(added_events);
+                        app.project.undoer.add_undo(&selected_corpus);
+                    }
+                    app.project.updates_pending = false;
+                    app.project.schedule_corpus_tree_update(&app.jobs);
+                },
+            );
         }
+    }
+
+    pub(crate) fn has_undo(&self) -> bool {
+        self.selected_corpus
+            .as_ref()
+            .is_some_and(|c| self.undoer.has_undo(&c))
+    }
+
+    pub(crate) fn has_redo(&self) -> bool {
+        self.selected_corpus
+            .as_ref()
+            .is_some_and(|c| self.undoer.has_redo(&c))
     }
 
     /// Rebuild the state that is not persisted but calculated
@@ -122,41 +176,41 @@ impl Project {
     }
 
     fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
-        if let Some(corpus_name) = self.selected_corpus.clone() {
-            if let Some(corpus_location) = self.corpus_locations.get(&corpus_name).cloned() {
-                let notifier = self.notifier.clone();
-                let corpus_cache = self.corpus_cache.clone();
+        if let Some(selected_corpus) = self.selected_corpus.clone() {
+            let notifier = self.notifier.clone();
+            let corpus_cache = self.corpus_cache.clone();
 
-                jobs.add(
-                    "Updating corpus selection",
-                    move |job| {
-                        job.update_message("Loading corpus from disk");
-                        if let Some(graph) = corpus_cache.get(&corpus_name, &corpus_location)? {
-                            job.update_message("Updating corpus structure");
-                            let corpus_tree = CorpusTree::create_from_graph(graph, notifier)?;
-                            Ok(Some(corpus_tree))
-                        } else {
-                            Ok(None)
-                        }
-                    },
-                    |result, app| {
-                        let old_selection = app
-                            .corpus_tree
-                            .as_ref()
-                            .and_then(|ct| ct.selected_corpus_node);
-                        // Drop any old corpus tree in a background thread.
-                        // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
-                        let old_corpus_tree = app.corpus_tree.take();
-                        rayon::spawn(move || std::mem::drop(old_corpus_tree));
+            jobs.add(
+                "Updating corpus selection",
+                move |job| {
+                    job.update_message("Loading corpus from disk");
+                    if let Some(graph) =
+                        corpus_cache.get(&selected_corpus.name, &selected_corpus.location)?
+                    {
+                        job.update_message("Updating corpus structure");
+                        let corpus_tree = CorpusTree::create_from_graph(graph, notifier)?;
+                        Ok(Some(corpus_tree))
+                    } else {
+                        Ok(None)
+                    }
+                },
+                |result, app| {
+                    let old_selection = app
+                        .corpus_tree
+                        .as_ref()
+                        .and_then(|ct| ct.selected_corpus_node);
+                    // Drop any old corpus tree in a background thread.
+                    // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
+                    let old_corpus_tree = app.corpus_tree.take();
+                    rayon::spawn(move || std::mem::drop(old_corpus_tree));
 
-                        if let Some(mut corpus_tree) = result {
-                            // Keep the selected corpus node
-                            corpus_tree.select_corpus_node(old_selection);
-                            app.corpus_tree = Some(corpus_tree);
-                        }
-                    },
-                );
-            }
+                    if let Some(mut corpus_tree) = result {
+                        // Keep the selected corpus node
+                        corpus_tree.select_corpus_node(old_selection);
+                        app.corpus_tree = Some(corpus_tree);
+                    }
+                },
+            );
         }
     }
 }
