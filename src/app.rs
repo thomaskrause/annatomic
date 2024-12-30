@@ -185,7 +185,11 @@ impl AnnatomicApp {
         } else {
             if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            };
+            } else if ctx.input_mut(|i| i.consume_shortcut(&UNDO_SHORTCUT)) {
+                self.project.undo(&self.jobs);
+            } else if ctx.input_mut(|i| i.consume_shortcut(&REDO_SHORTCUT)) {
+                self.project.redo(&self.jobs);
+            }
 
             self.handle_corpus_confirmation_dialog(ctx);
             egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {

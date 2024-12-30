@@ -95,10 +95,7 @@ impl Project {
                 let mut undo_settings = undoer::Settings::default();
                 undo_settings.max_undos = 10;
                 self.undoer = Undoer::with_settings(undo_settings);
-                self.undoer.feed_state(
-                    std::time::Instant::now().elapsed().as_secs_f64(),
-                    &new_selection,
-                );
+                self.undoer.add_undo(&new_selection);
                 self.selected_corpus = Some(new_selection);
             } else {
                 self.notifier
@@ -147,10 +144,7 @@ impl Project {
                 |added_events, app| {
                     if let Some(selected_corpus) = &mut app.project.selected_corpus {
                         selected_corpus.diff_to_last_save.extend(added_events);
-                        app.project.undoer.feed_state(
-                            std::time::Instant::now().elapsed().as_secs_f64(),
-                            &selected_corpus,
-                        );
+                        app.project.undoer.add_undo(&selected_corpus);
                     }
                     app.project.updates_pending = false;
                     app.project.schedule_corpus_tree_update(&app.jobs);
@@ -175,8 +169,9 @@ impl Project {
                     "Undoing changes",
                     move |j| {
                         j.update_message("Loading old corpus state from disk");
+
                         let lock = corpus_cache
-                            .get(&new_state.name, &new_state.location)?
+                            .load_from_disk(&new_state.name, &new_state.location)?
                             .context("Graph not found on disk")?;
                         {
                             let mut graph = lock.write();
@@ -212,11 +207,11 @@ impl Project {
                 let corpus_cache = self.corpus_cache.clone();
                 // Reload the corpus from disk and apply the outstanding changes
                 jobs.add(
-                    "Undoing changes",
+                    "Redoing changes",
                     move |j| {
                         j.update_message("Loading old corpus state from disk");
                         let lock = corpus_cache
-                            .get(&new_state.name, &new_state.location)?
+                            .load_from_disk(&new_state.name, &new_state.location)?
                             .context("Graph not found on disk")?;
                         {
                             let mut graph = lock.write();
@@ -243,8 +238,7 @@ impl Project {
     pub(crate) fn load_after_init(&mut self, jobs: &JobExecutor) -> Result<()> {
         if let Some(selection) = &mut self.selected_corpus {
             selection.diff_to_last_save.clear();
-            self.undoer
-                .feed_state(std::time::Instant::now().elapsed().as_secs_f64(), selection);
+            self.undoer.add_undo(selection);
         }
         self.schedule_corpus_tree_update(jobs);
         Ok(())
