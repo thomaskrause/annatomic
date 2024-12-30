@@ -23,14 +23,27 @@ impl CorpusCache {
         corpus_name: &str,
         corpus_location: &Path,
     ) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
-        let mut inner = self.inner.write();
+        {
+            let mut inner = self.inner.write();
 
-        // Check if a cached version exist
-        if let Some(existing) = inner.as_mut() {
-            if existing.name == corpus_name && existing.location == corpus_location {
-                return Ok(Some(existing.graph.clone()));
+            // Check if a cached version exist
+            if let Some(existing) = inner.as_mut() {
+                if existing.name == corpus_name && existing.location == corpus_location {
+                    return Ok(Some(existing.graph.clone()));
+                }
             }
         }
+
+        // Load and return the graph
+        self.load_from_disk(corpus_name, corpus_location)
+    }
+
+    pub(crate) fn load_from_disk(
+        &self,
+        corpus_name: &str,
+        corpus_location: &Path,
+    ) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
+        let mut inner = self.inner.write();
 
         // Load and return the graph
         let mut graph = AnnotationGraph::new(false)?;
