@@ -136,25 +136,26 @@ impl Project {
     }
 
     pub(crate) fn add_changeset(&mut self, jobs: &JobExecutor, mut update: GraphUpdate) {
-        if let Some(selected_corpus) = &mut self.selected_corpus {
-            match selected_corpus.graph() {
-                Ok(graph) => {
-                    self.updates_pending = true;
-                    jobs.add(
-                        "Updating corpus",
-                        move |job| {
-                            let mut graph = graph.write().map_err(|e| anyhow!("{e}"))?;
-                            graph.apply_update(&mut update, |msg| job.update_message(msg))?;
-                            Ok(())
-                        },
-                        |_, app| {
-                            app.project.updates_pending = false;
-                            app.project.schedule_corpus_tree_update(&app.jobs);
-                        },
-                    );
-                }
-                Err(err) => self.notifier.report_error(err),
-            }
+        if let Some(mut selected_corpus) = self.selected_corpus.clone() {
+            self.updates_pending = true;
+            jobs.add(
+                "Updating corpus",
+                move |job| {
+                    job.update_message("Loading corpus if necessary");
+                    let graph = selected_corpus.graph()?;
+                    job.update_message("Applying updates");
+                    let mut graph = graph.write().map_err(|e| anyhow!("{e}"))?;
+                    graph.apply_update(&mut update, |msg| {
+                        job.update_message(format!("Applying updates: {msg}"))
+                    })?;
+
+                    Ok(())
+                },
+                |_, app| {
+                    app.project.updates_pending = false;
+                    app.project.schedule_corpus_tree_update(&app.jobs);
+                },
+            );
         }
     }
 
@@ -182,6 +183,10 @@ impl Project {
                 }
             },
             |result, app| {
+                let old_selection = app
+                    .corpus_tree
+                    .as_ref()
+                    .and_then(|ct| ct.selected_corpus_node);
                 // Drop any old corpus tree in a background thread.
                 // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
                 let old_corpus_tree = app.corpus_tree.take();
@@ -189,10 +194,6 @@ impl Project {
 
                 if let Some(mut corpus_tree) = result {
                     // Keep the selected corpus node
-                    let old_selection = app
-                        .corpus_tree
-                        .as_ref()
-                        .and_then(|ct| ct.selected_corpus_node);
                     corpus_tree.select_corpus_node(old_selection);
                     app.corpus_tree = Some(corpus_tree);
                 }

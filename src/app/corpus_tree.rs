@@ -46,17 +46,23 @@ impl TryFrom<&Data> for GraphUpdate {
         let mut update = GraphUpdate::new();
 
         for entry in value.node_annos.iter() {
-            update.add_event(DeleteNodeLabel {
-                node_name: value.parent_node_name.clone().into(),
-                anno_ns: entry.original_namespace.clone(),
-                anno_name: entry.original_name.clone(),
-            })?;
-            update.add_event(AddNodeLabel {
-                node_name: value.parent_node_name.clone().into(),
-                anno_ns: entry.current_namespace.clone(),
-                anno_name: entry.current_name.clone(),
-                anno_value: entry.current_value.clone(),
-            })?;
+            let entry_key = AnnoKey {
+                ns: entry.original_namespace.clone().into(),
+                name: entry.original_name.clone().into(),
+            };
+            if value.changed_keys.contains(&entry_key) {
+                update.add_event(DeleteNodeLabel {
+                    node_name: value.parent_node_name.clone().into(),
+                    anno_ns: entry.original_namespace.clone(),
+                    anno_name: entry.original_name.clone(),
+                })?;
+                update.add_event(AddNodeLabel {
+                    node_name: value.parent_node_name.clone().into(),
+                    anno_ns: entry.current_namespace.clone(),
+                    anno_name: entry.current_name.clone(),
+                    anno_value: entry.current_value.clone(),
+                })?;
+            }
         }
 
         Ok(update)
@@ -189,7 +195,7 @@ impl CorpusTree {
             if ui
                 .add_enabled(
                     !self.data.changed_keys.is_empty(),
-                    Button::new("Apply Updates"),
+                    Button::new("Apply document updates"),
                 )
                 .clicked()
             {
