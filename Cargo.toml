@@ -40,8 +40,8 @@ egui_kittest = {version = "0.30.0", features = ["wgpu", "snapshot"]}
 tempfile = "3.14.0"
 
 [patch.crates-io]
-graphannis = {git = "https://github.com/korpling/graphANNIS.git", branch = "main"}
-graphannis-core = {git = "https://github.com/korpling/graphANNIS.git", branch = "main"}
+graphannis = {git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements"}
+graphannis-core = {git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements"}
 
 # Compile some of the dependencies in release mode if when we are ourself in
 # "dev" mode (like building debug binaries or running tests)

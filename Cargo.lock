@@ -1921,7 +1921,7 @@ dependencies = [
 [[package]]
 name = "graphannis"
 version = "3.5.1"
-source = "git+https://github.com/korpling/graphANNIS.git?branch=main#82dd9c75f7dd4ec50f8ce12f8b3824f36d5a9845"
+source = "git+https://github.com/korpling/graphANNIS.git?branch=annatomic-improvements#c63738493f7f23e0fef142e33fa62e04abdea249"
 dependencies = [
  "boolean_expression",
  "csv",
@@ -1961,7 +1961,7 @@ dependencies = [
 [[package]]
 name = "graphannis-core"
 version = "3.5.1"
-source = "git+https://github.com/korpling/graphANNIS.git?branch=main#82dd9c75f7dd4ec50f8ce12f8b3824f36d5a9845"
+source = "git+https://github.com/korpling/graphANNIS.git?branch=annatomic-improvements#c63738493f7f23e0fef142e33fa62e04abdea249"
 dependencies = [
  "binary-layout 4.0.2",
  "bincode",

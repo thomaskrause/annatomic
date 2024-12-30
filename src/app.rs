@@ -20,6 +20,8 @@ mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
 pub const QUIT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);
+pub const UNDO_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
+pub const REDO_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Y);
 
 /// Which main view to show in the app
 #[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
@@ -201,6 +203,24 @@ impl AnnatomicApp {
                         {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
+                    });
+                    ui.menu_button("Edit", |ui| {
+                        if ui
+                            .add_enabled(
+                                self.project.has_undo(),
+                                Button::new("Undo")
+                                    .shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
+                            )
+                            .clicked()
+                        {}
+                        if ui
+                            .add_enabled(
+                                self.project.has_redo(),
+                                Button::new("Redo")
+                                    .shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
+                            )
+                            .clicked()
+                        {}
                     });
                     ui.menu_button("View", |ui| {
                         egui::gui_zoom::zoom_menu_buttons(ui);
