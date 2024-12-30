@@ -36,15 +36,6 @@ pub(crate) struct Project {
     undoer: Undoer<Corpus>,
 }
 
-impl PartialEq for Project {
-    fn eq(&self, other: &Self) -> bool {
-        self.updates_pending == other.updates_pending
-            && self.selected_corpus == other.selected_corpus
-            && self.scheduled_for_deletion == other.scheduled_for_deletion
-            && self.corpus_locations == other.corpus_locations
-    }
-}
-
 impl Project {
     pub(crate) fn new(notifier: Arc<Notifier>) -> Self {
         let mut undo_settings = undoer::Settings::default();
@@ -96,11 +87,19 @@ impl Project {
         self.selected_corpus = None;
         if let Some(name) = selection {
             if let Some(location) = self.corpus_locations.get(&name) {
-                self.selected_corpus = Some(Corpus {
+                let new_selection = Corpus {
                     name,
                     location: location.to_path_buf(),
                     diff_to_last_save: Vec::new(),
-                });
+                };
+                let mut undo_settings = undoer::Settings::default();
+                undo_settings.max_undos = 10;
+                self.undoer = Undoer::with_settings(undo_settings);
+                self.undoer.feed_state(
+                    std::time::Instant::now().elapsed().as_secs_f64(),
+                    &new_selection,
+                );
+                self.selected_corpus = Some(new_selection);
             } else {
                 self.notifier
                     .add_toast(Toast::error(format!("Missing location for corpus {name}")));
@@ -148,7 +147,10 @@ impl Project {
                 |added_events, app| {
                     if let Some(selected_corpus) = &mut app.project.selected_corpus {
                         selected_corpus.diff_to_last_save.extend(added_events);
-                        app.project.undoer.add_undo(&selected_corpus);
+                        app.project.undoer.feed_state(
+                            std::time::Instant::now().elapsed().as_secs_f64(),
+                            &selected_corpus,
+                        );
                     }
                     app.project.updates_pending = false;
                     app.project.schedule_corpus_tree_update(&app.jobs);
@@ -163,14 +165,87 @@ impl Project {
             .is_some_and(|c| self.undoer.has_undo(&c))
     }
 
+    pub(crate) fn undo(&mut self, jobs: &JobExecutor) {
+        if let Some(selected_corpus) = &mut self.selected_corpus {
+            if let Some(new_state) = self.undoer.undo(&selected_corpus).cloned() {
+                self.selected_corpus = Some(new_state.clone());
+                let corpus_cache = self.corpus_cache.clone();
+                // Reload the corpus from disk and apply the outstanding changes
+                jobs.add(
+                    "Undoing changes",
+                    move |j| {
+                        j.update_message("Loading old corpus state from disk");
+                        let lock = corpus_cache
+                            .get(&new_state.name, &new_state.location)?
+                            .context("Graph not found on disk")?;
+                        {
+                            let mut graph = lock.write();
+                            j.update_message("Applying updates");
+                            let mut updates = GraphUpdate::new();
+                            for event in new_state.diff_to_last_save.iter() {
+                                updates.add_event(event.clone())?;
+                            }
+                            graph.apply_update(&mut updates, |msg| {
+                                j.update_message(format!("Applying updates: {}", msg));
+                            })?;
+                        }
+                        Ok(lock)
+                    },
+                    |_, app| {
+                        app.project.schedule_corpus_tree_update(&app.jobs);
+                    },
+                );
+            }
+        }
+    }
+
     pub(crate) fn has_redo(&self) -> bool {
         self.selected_corpus
             .as_ref()
             .is_some_and(|c| self.undoer.has_redo(&c))
     }
 
+    pub(crate) fn redo(&mut self, jobs: &JobExecutor) {
+        if let Some(selected_corpus) = &mut self.selected_corpus {
+            if let Some(new_state) = self.undoer.redo(&selected_corpus).cloned() {
+                self.selected_corpus = Some(new_state.clone());
+                let corpus_cache = self.corpus_cache.clone();
+                // Reload the corpus from disk and apply the outstanding changes
+                jobs.add(
+                    "Undoing changes",
+                    move |j| {
+                        j.update_message("Loading old corpus state from disk");
+                        let lock = corpus_cache
+                            .get(&new_state.name, &new_state.location)?
+                            .context("Graph not found on disk")?;
+                        {
+                            let mut graph = lock.write();
+                            j.update_message("Applying updates");
+                            let mut updates = GraphUpdate::new();
+                            for event in new_state.diff_to_last_save.iter() {
+                                updates.add_event(event.clone())?;
+                            }
+                            graph.apply_update(&mut updates, |msg| {
+                                j.update_message(format!("Applying updates: {}", msg));
+                            })?;
+                        }
+                        Ok(lock)
+                    },
+                    |_, app| {
+                        app.project.schedule_corpus_tree_update(&app.jobs);
+                    },
+                );
+            }
+        }
+    }
+
     /// Rebuild the state that is not persisted but calculated
     pub(crate) fn load_after_init(&mut self, jobs: &JobExecutor) -> Result<()> {
+        if let Some(selection) = &mut self.selected_corpus {
+            selection.diff_to_last_save.clear();
+            self.undoer
+                .feed_state(std::time::Instant::now().elapsed().as_secs_f64(), selection);
+        }
         self.schedule_corpus_tree_update(jobs);
         Ok(())
     }

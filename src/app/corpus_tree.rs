@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, fmt::Debug, sync::Arc};
 
 use anyhow::{Context, Error};
 use egui::{mutex::RwLock, Button, CollapsingHeader, RichText, ScrollArea, Ui};
@@ -29,7 +29,7 @@ struct MetaEntry {
     original_name: String,
 }
 
-#[derive(Clone, PartialEq, Default)]
+#[derive(Clone, PartialEq, Default, Debug)]
 struct Data {
     parent_node_name: String,
     node_annos: Vec<MetaEntry>,
@@ -72,6 +72,15 @@ pub(crate) struct CorpusTree {
     gs: Box<dyn WriteableGraphStorage>,
     graph: Arc<RwLock<AnnotationGraph>>,
     notifier: Arc<Notifier>,
+}
+
+impl Debug for CorpusTree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CorpusTree")
+            .field("selected_corpus_node", &self.selected_corpus_node)
+            .field("data", &self.data)
+            .finish()
+    }
 }
 
 impl CorpusTree {
