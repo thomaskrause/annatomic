@@ -34,7 +34,7 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[String]) -> 
                     .project
                     .selected_corpus
                     .as_ref()
-                    .is_some_and(|selected_corpus| &selected_corpus.name == c);
+                    .is_some_and(|selected_corpus| selected_corpus == c);
                 let label = ui.selectable_label(is_selected, c);
                 label.context_menu(|ui| {
                     if ui.button("Delete").clicked() {
