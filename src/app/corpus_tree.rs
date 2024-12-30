@@ -1,10 +1,7 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashSet, sync::Arc};
 
-use anyhow::{anyhow, Context, Error};
-use egui::{Button, CollapsingHeader, RichText, ScrollArea, Ui};
+use anyhow::{Context, Error};
+use egui::{mutex::RwLock, Button, CollapsingHeader, RichText, ScrollArea, Ui};
 use egui_extras::Column;
 use egui_notify::Toast;
 use graphannis::{
@@ -52,12 +49,12 @@ impl TryFrom<&Data> for GraphUpdate {
             };
             if value.changed_keys.contains(&entry_key) {
                 update.add_event(DeleteNodeLabel {
-                    node_name: value.parent_node_name.clone().into(),
+                    node_name: value.parent_node_name.clone(),
                     anno_ns: entry.original_namespace.clone(),
                     anno_name: entry.original_name.clone(),
                 })?;
                 update.add_event(AddNodeLabel {
-                    node_name: value.parent_node_name.clone().into(),
+                    node_name: value.parent_node_name.clone(),
                     anno_ns: entry.current_namespace.clone(),
                     anno_name: entry.current_name.clone(),
                     anno_value: entry.current_value.clone(),
@@ -87,11 +84,11 @@ impl CorpusTree {
         {
             let part_of_component = AnnotationComponent::new(PartOf, ANNIS_NS.into(), "".into());
             {
-                let mut graph = graph.write().map_err(|e| anyhow!("{e}"))?;
+                let mut graph = graph.write();
                 let all_partof_components = graph.get_all_components(Some(PartOf), None);
                 graph.ensure_loaded_parallel(&all_partof_components)?;
             }
-            let graph = graph.read().map_err(|e| anyhow!("{e}"))?;
+            let graph = graph.read();
 
             let partof = graph
                 .get_graphstorage(&part_of_component)
@@ -228,7 +225,7 @@ impl CorpusTree {
             self.data.node_annos.clear();
             self.data.changed_keys.clear();
 
-            let graph = self.graph.read().unwrap();
+            let graph = self.graph.read();
             let anno_keys = graph
                 .get_node_annos()
                 .get_all_keys_for_item(&parent, None, None);
@@ -270,7 +267,7 @@ impl CorpusTree {
             .notifier
             .unwrap_or_default(child_nodes.context("Could not get child nodes"));
         let parent_node_name = {
-            let graph = self.graph.read().unwrap();
+            let graph = self.graph.read();
             match graph
                 .get_node_annos()
                 .get_value_for_item(&parent, &NODE_NAME_KEY)
