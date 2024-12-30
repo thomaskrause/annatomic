@@ -212,7 +212,9 @@ impl AnnatomicApp {
                                     .shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
                             )
                             .clicked()
-                        {}
+                        {
+                            self.project.undo(&self.jobs);
+                        }
                         if ui
                             .add_enabled(
                                 self.project.has_redo(),
@@ -220,7 +222,9 @@ impl AnnatomicApp {
                                     .shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
                             )
                             .clicked()
-                        {}
+                        {
+                            self.project.redo(&self.jobs);
+                        }
                     });
                     ui.menu_button("View", |ui| {
                         egui::gui_zoom::zoom_menu_buttons(ui);
