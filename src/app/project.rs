@@ -2,6 +2,9 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use cache::CorpusCache;
+
+#[cfg(test)]
+use egui::mutex::RwLock;
 use egui::util::undoer::{self, Undoer};
 use egui_notify::Toast;
 use graphannis::{
@@ -268,6 +271,16 @@ impl Project {
         }
         self.schedule_corpus_tree_update(jobs);
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_selected_graph(&self) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
+        if let Some(corpus) = &self.selected_corpus {
+            let graph = self.corpus_cache.get(&corpus.name, &corpus.location)?;
+            Ok(graph)
+        } else {
+            Ok(None)
+        }
     }
 
     fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
