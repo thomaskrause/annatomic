@@ -22,6 +22,12 @@ impl Notifier {
         self.error_queue.push(err);
     }
 
+    pub(crate) fn report_result<T>(&self, result: anyhow::Result<T>) {
+        if let Err(err) = result {
+            self.report_error(err);
+        }
+    }
+
     pub(crate) fn unwrap_or_default<T>(&self, result: anyhow::Result<T>) -> T
     where
         T: Default,
