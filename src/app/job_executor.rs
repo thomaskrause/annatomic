@@ -1,9 +1,6 @@
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::BTreeMap, sync::Arc};
 
-use egui::Ui;
+use egui::{mutex::RwLock, Ui};
 use log::debug;
 
 use super::AnnatomicApp;
@@ -22,9 +19,8 @@ impl FgJob {
     where
         S: Into<String>,
     {
-        if let Ok(mut lock) = self.msg.write() {
-            lock.replace(message.into());
-        }
+        let mut lock = self.msg.write();
+        lock.replace(message.into());
     }
 }
 
@@ -51,10 +47,9 @@ impl JobExecutor {
 
         let single_job = FgJob::default();
         {
-            if let Ok(mut lock) = running_jobs.write() {
-                lock.insert(title.to_string(), single_job.clone());
-                debug!("Number of currently running jobs: {}", lock.len());
-            }
+            let mut lock = running_jobs.write();
+            lock.insert(title.to_string(), single_job.clone());
+            debug!("Number of currently running jobs: {}", lock.len());
         }
         let title = title.to_string();
         rayon::spawn(move || {
@@ -63,58 +58,54 @@ impl JobExecutor {
             debug!("Finished foreground job \"{title}\"");
             match result {
                 Ok(result) => {
-                    if let Ok(mut finished_jobs) = finished_jobs.write() {
-                        finished_jobs.insert(
-                            title.clone(),
-                            Box::new(move |app| state_updater(result, app)),
-                        );
-                    }
+                    let mut finished_jobs = finished_jobs.write();
+                    finished_jobs.insert(
+                        title.clone(),
+                        Box::new(move |app| state_updater(result, app)),
+                    );
                 }
                 Err(err) => {
-                    if let Ok(mut failed_jobs) = failed_jobs.write() {
-                        failed_jobs.insert(title.clone(), err);
-                    }
+                    let mut failed_jobs = failed_jobs.write();
+                    failed_jobs.insert(title.clone(), err);
                 }
             }
-            if let Ok(mut jobs) = running_jobs.write() {
-                jobs.remove(&title);
-            }
+            let mut jobs = running_jobs.write();
+            jobs.remove(&title);
         });
     }
 
     pub(super) fn show(&self, ui: &mut Ui, app: &mut AnnatomicApp) -> bool {
-        if let Ok(mut failed_jobs) = self.failed.write() {
-            while let Some((_title, e)) = failed_jobs.pop_first() {
-                app.notifier.report_error(e);
-            }
+        let mut failed_jobs = self.failed.write();
+        while let Some((_title, e)) = failed_jobs.pop_first() {
+            app.notifier.report_error(e);
         }
 
-        if let Ok(mut finished_jobs) = self.finished.write() {
-            while let Some(j) = finished_jobs.pop_first() {
-                j.1(app);
-            }
+        let mut finished_jobs = self.finished.write();
+        while let Some(j) = finished_jobs.pop_first() {
+            j.1(app);
         }
 
-        let mut has_jobs = false;
+        let running_jobs = self.running.read();
+        let has_jobs = !running_jobs.is_empty();
+        for (title, job) in running_jobs.iter() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.heading(title);
+            });
 
-        if let Ok(running_jobs) = self.running.write() {
-            has_jobs = !running_jobs.is_empty();
-            for (title, job) in running_jobs.iter() {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.heading(title);
-                });
-
-                if let Ok(msg) = job.msg.read() {
-                    ui.label(
-                        msg.clone().unwrap_or_else(|| {
-                            "Please wait for the background job to finish".into()
-                        }),
-                    );
-                }
-            }
+            let msg = job.msg.read();
+            ui.label(
+                msg.clone()
+                    .unwrap_or_else(|| "Please wait for the background job to finish".into()),
+            );
         }
 
         has_jobs
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_running_jobs(&self) -> bool {
+        let running_jobs = self.running.read();
+        !running_jobs.is_empty()
     }
 }

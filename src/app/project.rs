@@ -65,6 +65,13 @@ impl Project {
     }
 
     pub(crate) fn delete_corpus(&mut self, jobs: &JobExecutor, corpus_name: String) {
+        // Unselect corpus if necessary
+        if let Some(selection) = &self.selected_corpus {
+            if selection.name == corpus_name {
+                self.select_corpus(jobs, None);
+            }
+        }
+        // Delete the folder where the corpus is stored
         if let Some(location) = self.corpus_locations.remove(&corpus_name) {
             let title = format!(
                 "Deleting corpus \"{corpus_name}\" from {}",
@@ -297,6 +304,18 @@ impl Project {
                         corpus_tree.select_corpus_node(old_selection);
                         app.corpus_tree = Some(corpus_tree);
                     }
+                },
+            );
+        } else {
+            jobs.add(
+                "Deselecting corpus",
+                move |_job| Ok(()),
+                |_result, app| {
+                    // Drop any old corpus tree in a background thread.
+                    // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
+                    let old_corpus_tree = app.corpus_tree.take();
+                    rayon::spawn(move || std::mem::drop(old_corpus_tree));
+                    app.corpus_tree = None;
                 },
             );
         }

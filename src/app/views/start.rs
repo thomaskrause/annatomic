@@ -20,7 +20,9 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         }
         import_corpus(c2, app);
         create_new_corpus(c3, app);
-        demo_link(c4, app);
+        if app.args.dev {
+            demo_link(c4, app);
+        }
     });
     corpus_structure(ui, app);
 
@@ -108,6 +110,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
         let heading = ui.heading("Create new");
         let edit = TextEdit::singleline(&mut app.new_corpus_name)
             .hint_text("Corpus name")
+            .id("new-corpus-name".into())
             .desired_width(heading.rect.width());
         ui.add(edit);
         if ui.button("Add").clicked() {
