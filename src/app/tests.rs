@@ -61,6 +61,35 @@ pub(crate) fn wait_for_corpus_tree(
             break;
         }
     }
+    harness.run();
+}
+
+pub(crate) fn wait_until_jobs_finished(
+    harness: &mut Harness<'static>,
+    app_state: Arc<RwLock<crate::AnnatomicApp>>,
+) {
+    for i in 0..10_000 {
+        harness.step();
+        let app_state = app_state.read();
+        if i > 10 && !app_state.jobs.has_running_jobs() {
+            break;
+        }
+    }
+    harness.run();
+}
+
+#[macro_export]
+macro_rules! assert_snapshots {
+    ($($x:expr),* ) => {
+        $(
+            match $x {
+                Ok(_) => {}
+                Err(err) => {
+                    panic!("{}", err);
+                }
+            }
+        )*
+    };
 }
 
 #[test]

@@ -1,4 +1,7 @@
-use crate::app::tests::{create_app_with_corpus, create_test_harness, wait_for_corpus_tree};
+use crate::{
+    app::tests::{create_app_with_corpus, create_test_harness, wait_for_corpus_tree},
+    assert_snapshots,
+};
 use egui::{accesskit::Role, Id};
 use egui_kittest::kittest::Queryable;
 
@@ -100,10 +103,9 @@ fn delete_corpus() {
             break;
         }
     }
-    harness.run();
+    harness.step();
     let final_result = harness.try_wgpu_snapshot("delete_corpus");
-    assert!(confirmation_result.is_ok());
-    assert!(final_result.is_ok());
+    assert_snapshots!(confirmation_result, final_result);
     {
         let app_state = app_state.read();
         assert!(app_state.project.selected_corpus.is_none());
