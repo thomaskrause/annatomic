@@ -50,6 +50,19 @@ pub(crate) fn create_test_harness(
     (harness, result_app_state.clone())
 }
 
+pub(crate) fn wait_for_corpus_tree(
+    harness: &mut Harness<'static>,
+    app_state: Arc<RwLock<crate::AnnatomicApp>>,
+) {
+    for _ in 0..10_000 {
+        harness.step();
+        let app_state = app_state.read();
+        if app_state.corpus_tree.is_some() {
+            break;
+        }
+    }
+}
+
 #[test]
 fn show_main_page() {
     let mut app_state = crate::AnnatomicApp::default();
