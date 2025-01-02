@@ -38,8 +38,10 @@ pub(crate) struct Project {
 
 impl Project {
     pub(crate) fn new(notifier: Arc<Notifier>) -> Self {
-        let mut undo_settings = undoer::Settings::default();
-        undo_settings.max_undos = 10;
+        let undo_settings = undoer::Settings {
+            max_undos: 10,
+            ..Default::default()
+        };
         Self {
             updates_pending: false,
             selected_corpus: None,
@@ -92,8 +94,10 @@ impl Project {
                     location: location.to_path_buf(),
                     diff_to_last_save: Vec::new(),
                 };
-                let mut undo_settings = undoer::Settings::default();
-                undo_settings.max_undos = 10;
+                let undo_settings = undoer::Settings {
+                    max_undos: 10,
+                    ..Default::default()
+                };
                 self.undoer = Undoer::with_settings(undo_settings);
                 self.undoer.add_undo(&new_selection);
                 self.selected_corpus = Some(new_selection);
@@ -144,7 +148,7 @@ impl Project {
                 |added_events, app| {
                     if let Some(selected_corpus) = &mut app.project.selected_corpus {
                         selected_corpus.diff_to_last_save.extend(added_events);
-                        app.project.undoer.add_undo(&selected_corpus);
+                        app.project.undoer.add_undo(selected_corpus);
                     }
                     app.project.updates_pending = false;
                     app.project.schedule_corpus_tree_update(&app.jobs);
@@ -156,12 +160,12 @@ impl Project {
     pub(crate) fn has_undo(&self) -> bool {
         self.selected_corpus
             .as_ref()
-            .is_some_and(|c| self.undoer.has_undo(&c))
+            .is_some_and(|c| self.undoer.has_undo(c))
     }
 
     pub(crate) fn undo(&mut self, jobs: &JobExecutor) {
         if let Some(selected_corpus) = &mut self.selected_corpus {
-            if let Some(new_state) = self.undoer.undo(&selected_corpus).cloned() {
+            if let Some(new_state) = self.undoer.undo(selected_corpus).cloned() {
                 self.selected_corpus = Some(new_state.clone());
                 let corpus_cache = self.corpus_cache.clone();
                 // Reload the corpus from disk and apply the outstanding changes
@@ -197,12 +201,12 @@ impl Project {
     pub(crate) fn has_redo(&self) -> bool {
         self.selected_corpus
             .as_ref()
-            .is_some_and(|c| self.undoer.has_redo(&c))
+            .is_some_and(|c| self.undoer.has_redo(c))
     }
 
     pub(crate) fn redo(&mut self, jobs: &JobExecutor) {
         if let Some(selected_corpus) = &mut self.selected_corpus {
-            if let Some(new_state) = self.undoer.redo(&selected_corpus).cloned() {
+            if let Some(new_state) = self.undoer.redo(selected_corpus).cloned() {
                 self.selected_corpus = Some(new_state.clone());
                 let corpus_cache = self.corpus_cache.clone();
                 // Reload the corpus from disk and apply the outstanding changes
