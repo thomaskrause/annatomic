@@ -36,12 +36,16 @@ pub(crate) struct Project {
     undoer: Undoer<Corpus>,
 }
 
+fn default_undoer() -> Undoer<Corpus> {
+    let undo_settings = undoer::Settings {
+        max_undos: 10,
+        ..Default::default()
+    };
+    Undoer::with_settings(undo_settings)
+}
+
 impl Project {
     pub(crate) fn new(notifier: Arc<Notifier>) -> Self {
-        let undo_settings = undoer::Settings {
-            max_undos: 10,
-            ..Default::default()
-        };
         Self {
             updates_pending: false,
             selected_corpus: None,
@@ -49,7 +53,7 @@ impl Project {
             scheduled_for_deletion: None,
             corpus_locations: BTreeMap::new(),
             notifier,
-            undoer: Undoer::with_settings(undo_settings),
+            undoer: default_undoer(),
         }
     }
 
@@ -94,11 +98,7 @@ impl Project {
                     location: location.to_path_buf(),
                     diff_to_last_save: Vec::new(),
                 };
-                let undo_settings = undoer::Settings {
-                    max_undos: 10,
-                    ..Default::default()
-                };
-                self.undoer = Undoer::with_settings(undo_settings);
+                self.undoer = default_undoer();
                 self.undoer.add_undo(&new_selection);
                 self.selected_corpus = Some(new_selection);
             } else {
@@ -155,6 +155,21 @@ impl Project {
                 },
             );
         }
+    }
+
+    pub(crate) fn persist_changes_on_exit(&mut self) -> Result<()> {
+        if let Some(selected_corpus) = self.selected_corpus.clone() {
+            self.updates_pending = true;
+            let corpus_cache = self.corpus_cache.clone();
+            if let Some(graph) =
+                corpus_cache.get(&selected_corpus.name, &selected_corpus.location)?
+            {
+                let mut graph = graph.write();
+                graph.persist_to(&selected_corpus.location)?;
+                self.undoer = default_undoer();
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn has_undo(&self) -> bool {

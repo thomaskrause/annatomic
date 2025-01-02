@@ -180,7 +180,7 @@ impl AnnatomicApp {
         if ctx.input(|input_state| input_state.viewport().close_requested()) {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.heading("Closing application...");
-                ui.label("Please wait for any background jobs to finish.");
+                ui.label("Please wait until the corpus is persisted to disk.");
             });
         } else {
             if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
@@ -193,8 +193,6 @@ impl AnnatomicApp {
 
             self.handle_corpus_confirmation_dialog(ctx);
             egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-                // The top panel is often a good place for a menu bar:
-
                 egui::menu::bar(ui, |ui| {
                     ui.image(egui::include_image!("../assets/icon-32.png"));
                     ui.menu_button("File", |ui| {
@@ -271,5 +269,11 @@ impl eframe::App for AnnatomicApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.show(ctx, frame.info());
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Persist the changes in the annotation graph
+        self.notifier
+            .report_result(self.project.persist_changes_on_exit());
     }
 }
