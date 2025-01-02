@@ -86,10 +86,17 @@ fn delete_corpus() {
     harness.run();
     harness.get_by_label("single_sentence").click();
     {
+        // Programmatically mark the corpus for deletion
         let mut app_state = app_state.write();
         app_state.project.scheduled_for_deletion = Some("single_sentence".to_string());
     }
-    harness.run();
+    for i in 0..10_000 {
+        harness.step();
+        let app_state = app_state.read();
+        if i > 10 && app_state.corpus_tree.is_none() {
+            break;
+        }
+    }
     let confirmation_result = harness.try_wgpu_snapshot("delete_corpus_confirmation");
 
     harness.get_by_label_contains("Delete").click();
