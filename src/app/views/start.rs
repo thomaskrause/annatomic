@@ -8,6 +8,9 @@ use graphannis::model::AnnotationComponentType;
 
 use rfd::FileDialog;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     let corpora: Vec<_> = app.project.corpus_locations.keys().cloned().collect();
 
