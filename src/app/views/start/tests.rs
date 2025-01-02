@@ -51,13 +51,16 @@ fn create_new_corpus() {
     inputs[0].type_text("example");
     harness.get_by_label("Add").click();
 
-    harness.run();
-    for _ in 0..10_000 {
+    for i in 0..10_000 {
         harness.step();
         let app_state = app_state.read();
-        if app_state.corpus_tree.is_some() {
+        if i > 10 && app_state.corpus_tree.is_some() && app_state.notifier.is_empty() {
             break;
         }
+    }
+    // Add some runs, so that the toasts have time to disappear
+    for _ in 0..10 {
+        harness.step();
     }
 
     {
@@ -94,10 +97,11 @@ fn delete_corpus() {
     for _ in 0..10_000 {
         harness.step();
         let app_state = app_state.read();
-        if !app_state.jobs.has_running_jobs() {
+        if !app_state.jobs.has_running_jobs() && app_state.corpus_tree.is_none() {
             break;
         }
     }
+    harness.run();
     let final_result = harness.try_wgpu_snapshot("delete_corpus");
     assert!(confirmation_result.is_ok());
     assert!(final_result.is_ok());

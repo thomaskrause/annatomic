@@ -1,14 +1,12 @@
-use std::sync::Mutex;
-
 use anyhow::Error;
 use crossbeam_queue::SegQueue;
-use egui::Context;
+use egui::{mutex::RwLock, Context};
 use egui_notify::{Toast, Toasts};
 use log::error;
 
 #[derive(Default)]
 pub(crate) struct Notifier {
-    toasts: Mutex<Toasts>,
+    toasts: RwLock<Toasts>,
     error_queue: SegQueue<Error>,
 }
 
@@ -42,33 +40,25 @@ impl Notifier {
     }
 
     pub(crate) fn add_toast(&self, toast: Toast) {
-        let messages = self.toasts.lock();
-        match messages {
-            Ok(mut messages) => {
-                messages.add(toast);
-            }
-            Err(lock_error) => {
-                error!("Error trying to report internal error: {lock_error}");
-            }
-        }
+        let mut messages = self.toasts.write();
+        messages.add(toast);
     }
     pub(super) fn show(&self, ctx: &Context) {
-        let messages = self.toasts.lock();
-        match messages {
-            Ok(mut messages) => {
-                while let Some(e) = self.error_queue.pop() {
-                    let error_msg = if e.chain().len() > 1 {
-                        format!("{e}: {}", e.root_cause())
-                    } else {
-                        format!("{e}")
-                    };
-                    messages.error(error_msg);
-                }
-                messages.show(ctx);
-            }
-            Err(lock_error) => {
-                error!("Error trying to report internal error: {lock_error}");
-            }
+        let mut messages = self.toasts.write();
+        while let Some(e) = self.error_queue.pop() {
+            let error_msg = if e.chain().len() > 1 {
+                format!("{e}: {}", e.root_cause())
+            } else {
+                format!("{e}")
+            };
+            messages.error(error_msg);
         }
+        messages.show(ctx);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        let messages = self.toasts.read();
+        messages.is_empty()
     }
 }
