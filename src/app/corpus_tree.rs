@@ -20,6 +20,9 @@ use graphannis_core::{
 
 use super::{job_executor::JobExecutor, Notifier, Project};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct MetaEntry {
     current_namespace: String,

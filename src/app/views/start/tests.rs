@@ -1,4 +1,4 @@
-use crate::app::tests::{create_app_with_corpus, create_test_harness};
+use crate::app::tests::{create_app_with_corpus, create_test_harness, wait_for_corpus_tree};
 use egui::{accesskit::Role, Id};
 use egui_kittest::kittest::Queryable;
 
@@ -12,15 +12,7 @@ fn select_corpus() {
     harness.run();
 
     harness.get_by_label("single_sentence").click();
-
-    harness.run();
-    for _ in 0..10_000 {
-        harness.step();
-        let app_state = app_state.read();
-        if app_state.corpus_tree.is_some() {
-            break;
-        }
-    }
+    wait_for_corpus_tree(&mut harness, app_state.clone());
 
     {
         let app_state = app_state.read();
