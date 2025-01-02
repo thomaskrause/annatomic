@@ -134,7 +134,7 @@ impl Project {
                     {
                         job.update_message("Applying updates");
                         let mut graph = graph.write();
-                        graph.apply_update(&mut update, |msg| {
+                        graph.apply_update_keep_statistics(&mut update, |msg| {
                             job.update_message(format!("Applying updates: {msg}"))
                         })?;
                     }
@@ -180,7 +180,7 @@ impl Project {
                             for event in new_state.diff_to_last_save.iter() {
                                 updates.add_event(event.clone())?;
                             }
-                            graph.apply_update(&mut updates, |msg| {
+                            graph.apply_update_keep_statistics(&mut updates, |msg| {
                                 j.update_message(format!("Applying updates: {}", msg));
                             })?;
                         }
@@ -220,7 +220,7 @@ impl Project {
                             for event in new_state.diff_to_last_save.iter() {
                                 updates.add_event(event.clone())?;
                             }
-                            graph.apply_update(&mut updates, |msg| {
+                            graph.apply_update_keep_statistics(&mut updates, |msg| {
                                 j.update_message(format!("Applying updates: {}", msg));
                             })?;
                         }
