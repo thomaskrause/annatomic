@@ -97,8 +97,6 @@ impl AnnatomicApp {
 
     pub(crate) fn set_fonts(&self, ctx: &egui::Context) {
         let mut defs = egui::FontDefinitions::default();
-        // Phosphor icons
-        egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
 
         // Icons and Emojis
         defs.font_data.insert(
@@ -136,6 +134,9 @@ impl AnnatomicApp {
             egui::FontFamily::Monospace,
             vec!["NotoSansMono-Regular".to_owned()],
         );
+        // Phosphor icons
+        egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
+
         ctx.set_fonts(defs);
     }
 
