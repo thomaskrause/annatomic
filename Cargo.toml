@@ -13,10 +13,10 @@ targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 [dependencies]
 eframe = {version = "0.30", default-features = false, features = [
   "accesskit", # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
-  "default_fonts", # Embed the default egui fonts.
   "glow", # Use the glow rendering backend. Alternative: "wgpu".
   "persistence", # Enable restoring app state when restarting the app.
   "wayland",
+  "x11",
 ]}
 egui = "0.30"
 egui_extras = {version = "0.30", features = ["image"]}
@@ -33,10 +33,15 @@ graphannis-core = "3.5.1"
 rayon = "1.10.0"
 rfd = "0.15.1"
 serde = {version = "1", features = ["derive"]}
+uuid = {version = "1.11.0", features = ["v4"]}
 
 [dev-dependencies]
 egui_kittest = {version = "0.30.0", features = ["wgpu", "snapshot"]}
 tempfile = "3.14.0"
+
+[patch.crates-io]
+graphannis = {git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements"}
+graphannis-core = {git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements"}
 
 # Compile some of the dependencies in release mode if when we are ourself in
 # "dev" mode (like building debug binaries or running tests)

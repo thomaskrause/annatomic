@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
 use eframe::IntegrationInfo;
-use egui::{Button, Color32, Key, KeyboardShortcut, Modifiers, RichText};
+use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText};
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
@@ -20,6 +20,8 @@ mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
 pub const QUIT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);
+pub const UNDO_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
+pub const REDO_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Y);
 
 /// Which main view to show in the app
 #[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
@@ -72,29 +74,70 @@ impl Default for AnnatomicApp {
 impl AnnatomicApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>, args: AnnatomicArgs) -> Result<Self> {
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-        let mut fonts = egui::FontDefinitions::default();
-        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-
-        cc.egui_ctx.set_fonts(fonts);
-
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            app.args = args;
-            app.project.load_after_init(&app.jobs)?;
-            return Ok(app);
-        }
-
-        let mut app = Self {
-            args,
-            ..Default::default()
+        let mut app = if let Some(storage) = cc.storage {
+            let mut app_from_storage: AnnatomicApp =
+                eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            app_from_storage.args = args;
+            app_from_storage
+        } else {
+            Self {
+                args,
+                ..Default::default()
+            }
         };
+        // Set fonts once
+        app.set_fonts(&cc.egui_ctx);
+        // Rebuild the state that is not persisted but calculated
         app.project.load_after_init(&app.jobs)?;
 
         Ok(app)
+    }
+
+    pub(crate) fn set_fonts(&self, ctx: &egui::Context) {
+        let mut defs = egui::FontDefinitions::default();
+
+        // Icons and Emojis
+        defs.font_data.insert(
+            "NotoEmoji-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Emoji/static/NotoEmoji-Regular.ttf"
+            ))),
+        );
+
+        // Regular font
+        defs.font_data.insert(
+            "NotoSans-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Sans/static/NotoSans-Regular.ttf"
+            ))),
+        );
+
+        // Monospaced font
+        defs.font_data.insert(
+            "NotoSansMono-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Sans_Mono/static/NotoSansMono-Regular.ttf"
+            ))),
+        );
+
+        // Define the fonts to use for each font family
+        defs.families.insert(
+            egui::FontFamily::Proportional,
+            vec![
+                "NotoSans-Regular".to_owned(),
+                "NotoEmoji-Regular".to_owned(),
+            ],
+        );
+        defs.families.insert(
+            egui::FontFamily::Monospace,
+            vec!["NotoSansMono-Regular".to_owned()],
+        );
+        // Phosphor icons
+        egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
+
+        ctx.set_fonts(defs);
     }
 
     fn handle_corpus_confirmation_dialog(&mut self, ctx: &egui::Context) {
@@ -134,56 +177,87 @@ impl AnnatomicApp {
 
     pub(crate) fn show(&mut self, ctx: &egui::Context, frame_info: &IntegrationInfo) {
         egui_extras::install_image_loaders(ctx);
-        // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
 
-        if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        };
-
-        self.handle_corpus_confirmation_dialog(ctx);
-
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
-
-            egui::menu::bar(ui, |ui| {
-                ui.image(egui::include_image!("../assets/icon-32.png"));
-                ui.menu_button("File", |ui| {
-                    if ui
-                        .add(Button::new("Quit").shortcut_text(ctx.format_shortcut(&QUIT_SHORTCUT)))
-                        .clicked()
-                    {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-                ui.menu_button("View", |ui| {
-                    egui::gui_zoom::zoom_menu_buttons(ui);
-                });
-                ui.add_space(16.0);
-                if self.args.dev {
-                    if let Some(seconds) = frame_info.cpu_usage {
-                        ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
-                        ui.add_space(16.0);
-                    }
-                }
-
-                egui::widgets::global_theme_preference_switch(ui);
+        if ctx.input(|input_state| input_state.viewport().close_requested()) {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.heading("Closing application...");
+                ui.label("Please wait until the corpus is persisted to disk.");
             });
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            let has_jobs = self.jobs.clone().show(ui, self);
-            if !has_jobs {
-                self.notifier.show(ctx);
-                let response = match self.main_view {
-                    MainView::Start => views::start::show(ui, self),
-                    MainView::Demo => views::demo::show(ui, self),
-                };
-                if let Err(e) = response {
-                    self.notifier.report_error(e);
-                }
+        } else {
+            if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            } else if ctx.input_mut(|i| i.consume_shortcut(&UNDO_SHORTCUT)) {
+                self.project.undo(&self.jobs);
+            } else if ctx.input_mut(|i| i.consume_shortcut(&REDO_SHORTCUT)) {
+                self.project.redo(&self.jobs);
             }
-        });
+
+            self.handle_corpus_confirmation_dialog(ctx);
+            egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+                egui::menu::bar(ui, |ui| {
+                    ui.image(egui::include_image!("../assets/icon-32.png"));
+                    ui.menu_button("File", |ui| {
+                        if ui
+                            .add(
+                                Button::new("Quit")
+                                    .shortcut_text(ctx.format_shortcut(&QUIT_SHORTCUT)),
+                            )
+                            .clicked()
+                        {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    });
+                    ui.menu_button("Edit", |ui| {
+                        if ui
+                            .add_enabled(
+                                self.project.has_undo(),
+                                Button::new("Undo")
+                                    .shortcut_text(ctx.format_shortcut(&UNDO_SHORTCUT)),
+                            )
+                            .clicked()
+                        {
+                            self.project.undo(&self.jobs);
+                        }
+                        if ui
+                            .add_enabled(
+                                self.project.has_redo(),
+                                Button::new("Redo")
+                                    .shortcut_text(ctx.format_shortcut(&REDO_SHORTCUT)),
+                            )
+                            .clicked()
+                        {
+                            self.project.redo(&self.jobs);
+                        }
+                    });
+                    ui.menu_button("View", |ui| {
+                        egui::gui_zoom::zoom_menu_buttons(ui);
+                    });
+                    ui.add_space(16.0);
+                    if self.args.dev {
+                        if let Some(seconds) = frame_info.cpu_usage {
+                            ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
+                            ui.add_space(16.0);
+                        }
+                    }
+
+                    egui::widgets::global_theme_preference_switch(ui);
+                });
+            });
+
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let has_jobs = self.jobs.clone().show(ui, self);
+                if !has_jobs {
+                    self.notifier.show(ctx);
+                    let response = match self.main_view {
+                        MainView::Start => views::start::show(ui, self),
+                        MainView::Demo => views::demo::show(ui, self),
+                    };
+                    if let Err(e) = response {
+                        self.notifier.report_error(e);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -196,5 +270,11 @@ impl eframe::App for AnnatomicApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         self.show(ctx, frame.info());
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Persist the changes in the annotation graph
+        self.notifier
+            .report_result(self.project.persist_changes_on_exit());
     }
 }
