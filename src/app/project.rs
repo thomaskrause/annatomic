@@ -271,13 +271,13 @@ impl Project {
     }
 
     fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
-        if let Some(selected_corpus) = self.selected_corpus.clone() {
-            let notifier = self.notifier.clone();
-            let corpus_cache = self.corpus_cache.clone();
-
-            jobs.add(
-                "Updating corpus selection",
-                move |job| {
+        let notifier = self.notifier.clone();
+        let corpus_cache = self.corpus_cache.clone();
+        let selected_corpus = self.selected_corpus.clone();
+        jobs.add(
+            "Updating corpus selection",
+            move |job| {
+                if let Some(selected_corpus) = &selected_corpus {
                     job.update_message("Loading corpus from disk");
                     if let Some(graph) =
                         corpus_cache.get(&selected_corpus.name, &selected_corpus.location)?
@@ -288,36 +288,26 @@ impl Project {
                     } else {
                         Ok(None)
                     }
-                },
-                |result, app| {
-                    let old_selection = app
-                        .corpus_tree
-                        .as_ref()
-                        .and_then(|ct| ct.selected_corpus_node);
-                    // Drop any old corpus tree in a background thread.
-                    // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
-                    let old_corpus_tree = app.corpus_tree.take();
-                    rayon::spawn(move || std::mem::drop(old_corpus_tree));
+                } else {
+                    Ok(None)
+                }
+            },
+            |result, app| {
+                let old_selection = app
+                    .corpus_tree
+                    .as_ref()
+                    .and_then(|ct| ct.selected_corpus_node);
+                // Drop any old corpus tree in a background thread.
+                // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
+                let old_corpus_tree = app.corpus_tree.take();
+                rayon::spawn(move || std::mem::drop(old_corpus_tree));
 
-                    if let Some(mut corpus_tree) = result {
-                        // Keep the selected corpus node
-                        corpus_tree.select_corpus_node(old_selection);
-                        app.corpus_tree = Some(corpus_tree);
-                    }
-                },
-            );
-        } else {
-            jobs.add(
-                "Deselecting corpus",
-                move |_job| Ok(()),
-                |_result, app| {
-                    // Drop any old corpus tree in a background thread.
-                    // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
-                    let old_corpus_tree = app.corpus_tree.take();
-                    rayon::spawn(move || std::mem::drop(old_corpus_tree));
-                    app.corpus_tree = None;
-                },
-            );
-        }
+                if let Some(mut corpus_tree) = result {
+                    // Keep the selected corpus node
+                    corpus_tree.select_corpus_node(old_selection);
+                    app.corpus_tree = Some(corpus_tree);
+                }
+            },
+        );
     }
 }
