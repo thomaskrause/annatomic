@@ -47,8 +47,7 @@ impl CorpusCache {
 
         // Load and return the graph
         let mut graph = AnnotationGraph::new(false)?;
-        graph.load_from(corpus_location, true)?;
-        graph.unlink_location()?;
+        graph.import(corpus_location)?;
 
         let graph = Arc::new(RwLock::new(graph));
 
