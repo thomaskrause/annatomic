@@ -79,7 +79,7 @@ pub(crate) fn wait_until_jobs_finished(
 }
 
 #[macro_export]
-macro_rules! assert_snapshots {
+macro_rules! assert_screenshots {
     ($($x:expr),* ) => {
         $(
             match $x {

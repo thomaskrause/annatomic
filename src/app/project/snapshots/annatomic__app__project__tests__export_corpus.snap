@@ -1,3 +1,7 @@
+---
+source: src/app/project/tests.rs
+expression: actual_graphml
+---
 <?xml version="1.0" encoding="UTF-8"?>
 <graphml>
     <key id="k0" for="node" attr.name="syntax::cat" attr.type="string"/>

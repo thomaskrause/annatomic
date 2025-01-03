@@ -1,8 +1,8 @@
-use std::fs::File;
+use std::{fs::File, io::BufReader};
 
-use crate::{app::MainView, AnnatomicApp};
+use crate::AnnatomicApp;
 use anyhow::Result;
-use egui::{TextEdit, Ui};
+use egui::{Id, TextEdit, Ui};
 use egui_notify::Toast;
 use graphannis::model::AnnotationComponentType;
 
@@ -19,10 +19,8 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
             app.notifier.report_error(e);
         }
         import_corpus(c2, app);
-        create_new_corpus(c3, app);
-        if app.args.dev {
-            demo_link(c4, app);
-        }
+        export_corpus(c3, app);
+        create_new_corpus(c4, app);
     });
     corpus_structure(ui, app);
 
@@ -64,7 +62,7 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[String]) -> 
 fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
     ui.vertical_centered(|ui| {
         ui.heading("Import");
-        if ui.button("Choose file...").clicked() {
+        if ui.button("Import file...").clicked() {
             let dlg = FileDialog::new().add_filter("GraphML (*.graphml)", &["graphml"]);
             if let Some(path) = dlg.pick_file() {
                 let job_title = format!("Importing {}", path.to_string_lossy());
@@ -78,12 +76,13 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                             "UnknownCorpus".to_string()
                         };
                         let input_file = File::open(path)?;
+                        let input_file_buffered = BufReader::new(input_file);
                         let (mut graph, _config_str) =
                             graphannis_core::graph::serialization::graphml::import::<
                                 AnnotationComponentType,
                                 _,
                                 _,
-                            >(input_file, false, |status| {
+                            >(input_file_buffered, false, |status| {
                                 job.update_message(status);
                             })?;
 
@@ -105,14 +104,30 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
     });
 }
 
+fn export_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
+    ui.vertical_centered(|ui| {
+        ui.heading("Export");
+        if ui.button("Export file...").clicked() {
+            let dlg = FileDialog::new()
+                .set_can_create_directories(true)
+                .add_filter("GraphML (*.graphml)", &["graphml"]);
+            if let Some(path) = dlg.save_file() {
+                app.project.export_to_graphml(&path, &app.jobs);
+            }
+        }
+    });
+}
+
 fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
     ui.vertical_centered(|ui| {
         let heading = ui.heading("Create new");
+        let edit_id = Id::from("new-corpus-name");
         let edit = TextEdit::singleline(&mut app.new_corpus_name)
             .hint_text("Corpus name")
-            .id("new-corpus-name".into())
+            .id(edit_id)
             .desired_width(heading.rect.width());
         ui.add(edit);
+
         if ui.button("Add").clicked() {
             if app.new_corpus_name.is_empty() {
                 app.notifier
@@ -127,16 +142,8 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                 app.project
                     .select_corpus(&app.jobs, Some(app.new_corpus_name.clone()));
                 app.new_corpus_name = String::new();
+                ui.memory_mut(|mem| mem.surrender_focus(edit_id));
             }
-        }
-    });
-}
-
-fn demo_link(ui: &mut Ui, app: &mut AnnatomicApp) {
-    ui.vertical_centered(|ui| {
-        ui.heading("Demo");
-        if ui.link("Go to span demo").clicked() {
-            app.main_view = MainView::Demo
         }
     });
 }

@@ -7,6 +7,8 @@ use anyhow::Result;
 use egui::mutex::RwLock;
 use graphannis::AnnotationGraph;
 
+use super::Corpus;
+
 struct InnerCorpusCache {
     name: String,
     location: PathBuf,
@@ -18,24 +20,20 @@ pub(crate) struct CorpusCache {
 }
 
 impl CorpusCache {
-    pub(crate) fn get(
-        &self,
-        corpus_name: &str,
-        corpus_location: &Path,
-    ) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
+    pub(crate) fn get(&self, corpus: &Corpus) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
         {
             let mut inner = self.inner.write();
 
             // Check if a cached version exist
             if let Some(existing) = inner.as_mut() {
-                if existing.name == corpus_name && existing.location == corpus_location {
+                if existing.name == corpus.name && existing.location == corpus.location {
                     return Ok(Some(existing.graph.clone()));
                 }
             }
         }
 
         // Load and return the graph
-        self.load_from_disk(corpus_name, corpus_location)
+        self.load_from_disk(&corpus.name, &corpus.location)
     }
 
     pub(crate) fn load_from_disk(

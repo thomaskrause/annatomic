@@ -11,20 +11,20 @@ all-features = true
 targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
 [dependencies]
-eframe = {version = "0.30", default-features = false, features = [
-  "accesskit", # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
-  "glow", # Use the glow rendering backend. Alternative: "wgpu".
+eframe = { version = "0.30", default-features = false, features = [
+  "accesskit",   # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
+  "glow",        # Use the glow rendering backend. Alternative: "wgpu".
   "persistence", # Enable restoring app state when restarting the app.
   "wayland",
   "x11",
-]}
+] }
 egui = "0.30"
-egui_extras = {version = "0.30", features = ["image"]}
+egui_extras = { version = "0.30", features = ["image"] }
 log = "0.4"
 
 # You only need serde if you want app persistence:
 anyhow = "1.0.94"
-clap = {version = "4.5.23", features = ["derive"]}
+clap = { version = "4.5.23", features = ["derive"] }
 crossbeam-queue = "0.3.11"
 egui-notify = "0.18.0"
 egui-phosphor = "0.8.0"
@@ -32,22 +32,26 @@ graphannis = "3.5.1"
 graphannis-core = "3.5.1"
 rayon = "1.10.0"
 rfd = "0.15.1"
-serde = {version = "1", features = ["derive"]}
-uuid = {version = "1.11.0", features = ["v4"]}
+serde = { version = "1", features = ["derive"] }
+uuid = { version = "1.11.0", features = ["v4"] }
 
 [dev-dependencies]
-egui_kittest = {version = "0.30.0", features = ["wgpu", "snapshot"]}
+egui_kittest = { version = "0.30.0", features = ["wgpu", "snapshot"] }
+insta = "1.41.1"
+pretty_assertions = "1.4.1"
 tempfile = "3.14.0"
 
 [patch.crates-io]
-graphannis = {git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements"}
-graphannis-core = {git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements"}
+graphannis = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
+graphannis-core = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
 
 # Compile some of the dependencies in release mode if when we are ourself in
 # "dev" mode (like building debug binaries or running tests)
 [profile.dev.package]
 graphannis-core.opt-level = 3
 graphannis.opt-level = 3
+insta.opt-level = 3
+similar.opt-level = 3
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -55,8 +59,8 @@ env_logger = "0.11"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen-futures = "0.4" 
-web-sys = "0.3.70" # to access the DOM (to hide the loading text)
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3.70"           # to access the DOM (to hide the loading text)
 
 [profile.release]
 opt-level = 2 # fast and small wasm

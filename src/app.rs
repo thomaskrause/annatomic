@@ -230,6 +230,11 @@ impl AnnatomicApp {
                         }
                     });
                     ui.menu_button("View", |ui| {
+                        if self.args.dev {
+                            if ui.button("Go to span demo").clicked() {
+                                self.main_view = MainView::Demo
+                            }
+                        }
                         egui::gui_zoom::zoom_menu_buttons(ui);
                     });
                     ui.add_space(16.0);

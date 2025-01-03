@@ -18,7 +18,8 @@ use graphannis_core::{
     graph::{storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY, NODE_TYPE},
 };
 
-use super::{job_executor::JobExecutor, Notifier, Project};
+use super::job_executor::JobExecutor;
+use super::{Notifier, Project};
 
 #[cfg(test)]
 mod tests;
