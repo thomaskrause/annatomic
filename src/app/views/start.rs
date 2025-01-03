@@ -41,10 +41,12 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[String]) -> 
                 let label = ui.selectable_label(is_selected, c);
                 label.context_menu(|ui| {
                     if ui.button("Delete").clicked() {
+                        app.apply_pending_updates();
                         app.project.scheduled_for_deletion = Some(c.clone());
                     }
                 });
                 if label.clicked() {
+                    app.apply_pending_updates();
                     if is_selected {
                         // Unselect the current corpus
                         app.project.select_corpus(&app.jobs, None);
@@ -63,6 +65,7 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
     ui.vertical_centered(|ui| {
         ui.heading("Import");
         if ui.button("Import file...").clicked() {
+            app.apply_pending_updates();
             let dlg = FileDialog::new().add_filter("GraphML (*.graphml)", &["graphml"]);
             if let Some(path) = dlg.pick_file() {
                 let job_title = format!("Importing {}", path.to_string_lossy());
@@ -129,6 +132,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
         ui.add(edit);
 
         if ui.button("Add").clicked() {
+            app.apply_pending_updates();
             if app.new_corpus_name.is_empty() {
                 app.notifier
                     .add_toast(Toast::warning("Empty corpus name not allowed"));
@@ -150,7 +154,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
     if let Some(corpus_tree) = &mut app.corpus_tree {
-        corpus_tree.show(ui, &mut app.project, &app.jobs);
+        corpus_tree.show(ui, &app.jobs);
     } else {
         ui.label("Select a corpus to edit it.");
     }
