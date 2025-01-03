@@ -19,7 +19,7 @@ use graphannis_core::{
 };
 
 use super::job_executor::JobExecutor;
-use super::{Notifier, Project};
+use super::Notifier;
 
 #[cfg(test)]
 mod tests;
@@ -101,7 +101,7 @@ impl CorpusTree {
         })
     }
 
-    fn show_structure(&mut self, ui: &mut Ui, project: &mut Project, jobs: &JobExecutor) {
+    fn show_structure(&mut self, ui: &mut Ui, jobs: &JobExecutor) {
         let root_nodes: graphannis_core::errors::Result<Vec<_>> = self.gs.root_nodes().collect();
         let root_nodes = self
             .notifier
@@ -112,11 +112,11 @@ impl CorpusTree {
                     .default_open(true)
                     .show(ui, |ui| {
                         for root_node in root_nodes.iter() {
-                            self.recursive_corpus_structure(ui, *root_node, 0, project, jobs)
+                            self.recursive_corpus_structure(ui, *root_node, 0, jobs)
                         }
                     });
             } else if let Some(root_node) = root_nodes.first() {
-                self.recursive_corpus_structure(ui, *root_node, 0, project, jobs)
+                self.recursive_corpus_structure(ui, *root_node, 0, jobs)
             }
         });
     }
@@ -220,13 +220,11 @@ impl CorpusTree {
         }
     }
 
-    pub(crate) fn show(&mut self, ui: &mut Ui, project: &mut Project, jobs: &JobExecutor) {
+    pub(crate) fn show(&mut self, ui: &mut Ui, jobs: &JobExecutor) {
         ui.group(|ui| {
             ui.heading("Corpus editor");
             ui.columns_const(|[c1, c2]| {
-                c1.push_id("corpus_structure", |ui| {
-                    self.show_structure(ui, project, jobs)
-                });
+                c1.push_id("corpus_structure", |ui| self.show_structure(ui, jobs));
                 c2.push_id("meta_editor", |ui| self.show_meta_editor(ui));
             });
         });
@@ -278,7 +276,6 @@ impl CorpusTree {
         ui: &mut Ui,
         parent: NodeID,
         level: usize,
-        project: &mut Project,
         jobs: &JobExecutor,
     ) {
         let child_nodes: graphannis_core::errors::Result<Vec<NodeID>> =
@@ -322,13 +319,7 @@ impl CorpusTree {
                     .default_open(level == 0)
                     .show(ui, |ui| {
                         for child_corpus in &child_nodes {
-                            self.recursive_corpus_structure(
-                                ui,
-                                *child_corpus,
-                                level + 1,
-                                project,
-                                jobs,
-                            );
+                            self.recursive_corpus_structure(ui, *child_corpus, level + 1, jobs);
                         }
                     });
             }

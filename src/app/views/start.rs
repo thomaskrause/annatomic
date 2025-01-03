@@ -154,7 +154,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
     if let Some(corpus_tree) = &mut app.corpus_tree {
-        corpus_tree.show(ui, &mut app.project, &app.jobs);
+        corpus_tree.show(ui, &app.jobs);
     } else {
         ui.label("Select a corpus to edit it.");
     }
