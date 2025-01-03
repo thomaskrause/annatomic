@@ -162,7 +162,7 @@ impl Project {
                         added_events.push(event.1);
                     }
                     job.update_message("Loading corpus if necessary");
-                    if let Some(graph) = corpus_cache.get(&&selected_corpus)? {
+                    if let Some(graph) = corpus_cache.get(&selected_corpus)? {
                         job.update_message("Applying updates");
                         let mut graph = graph.write();
                         graph.apply_update_keep_statistics(&mut update, |msg| {
@@ -336,7 +336,7 @@ impl Project {
             move |job| {
                 if let Some(selected_corpus) = &selected_corpus {
                     job.update_message("Loading corpus from disk");
-                    if let Some(graph) = corpus_cache.get(&selected_corpus)? {
+                    if let Some(graph) = corpus_cache.get(selected_corpus)? {
                         job.update_message("Updating corpus structure");
                         let corpus_tree = CorpusTree::create_from_graph(graph, notifier)?;
                         Ok(Some(corpus_tree))

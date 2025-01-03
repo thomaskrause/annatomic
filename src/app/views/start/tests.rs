@@ -87,13 +87,8 @@ fn delete_corpus() {
         let mut app_state = app_state.write();
         app_state.project.scheduled_for_deletion = Some("single_sentence".to_string());
     }
-    for i in 0..10_000 {
-        harness.step();
-        let app_state = app_state.read();
-        if i > 10 && app_state.corpus_tree.is_none() {
-            break;
-        }
-    }
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    wait_for_corpus_tree(&mut harness, app_state.clone());
     let confirmation_result = harness.try_wgpu_snapshot("delete_corpus_confirmation");
 
     harness.get_by_label_contains("Delete").click();
