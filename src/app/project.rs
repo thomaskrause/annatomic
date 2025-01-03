@@ -347,7 +347,7 @@ impl Project {
                     Ok(None)
                 }
             },
-            |result, app| {
+            move |result, app| {
                 let old_selection = app
                     .corpus_tree
                     .as_ref()
