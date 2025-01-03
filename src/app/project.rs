@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::BufWriter,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use cache::CorpusCache;
@@ -14,15 +20,32 @@ use graphannis::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{job_executor::JobExecutor, CorpusTree, Notifier, APP_ID};
+use super::job_executor::JobExecutor;
+use super::{CorpusTree, Notifier, APP_ID};
 
 mod cache;
+#[cfg(test)]
+mod tests;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub(crate) struct Corpus {
     pub(crate) name: String,
     location: PathBuf,
     diff_to_last_save: Vec<UpdateEvent>,
+}
+
+impl Corpus {
+    pub(crate) fn new<S, P>(name: S, location: P) -> Self
+    where
+        S: Into<String>,
+        P: Into<PathBuf>,
+    {
+        Self {
+            name: name.into(),
+            location: location.into(),
+            diff_to_last_save: Vec::new(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -103,11 +126,7 @@ impl Project {
         self.selected_corpus = None;
         if let Some(name) = selection {
             if let Some(location) = self.corpus_locations.get(&name) {
-                let new_selection = Corpus {
-                    name,
-                    location: location.to_path_buf(),
-                    diff_to_last_save: Vec::new(),
-                };
+                let new_selection = Corpus::new(name, location);
                 self.undoer = default_undoer();
                 self.undoer.add_undo(&new_selection);
                 self.selected_corpus = Some(new_selection);
@@ -143,9 +162,7 @@ impl Project {
                         added_events.push(event.1);
                     }
                     job.update_message("Loading corpus if necessary");
-                    if let Some(graph) =
-                        corpus_cache.get(&selected_corpus.name, &selected_corpus.location)?
-                    {
+                    if let Some(graph) = corpus_cache.get(&selected_corpus)? {
                         job.update_message("Applying updates");
                         let mut graph = graph.write();
                         graph.apply_update_keep_statistics(&mut update, |msg| {
@@ -171,15 +188,42 @@ impl Project {
         if let Some(selected_corpus) = self.selected_corpus.clone() {
             self.updates_pending = true;
             let corpus_cache = self.corpus_cache.clone();
-            if let Some(graph) =
-                corpus_cache.get(&selected_corpus.name, &selected_corpus.location)?
-            {
+            if let Some(graph) = corpus_cache.get(&selected_corpus)? {
                 let mut graph = graph.write();
                 graph.persist_to(&selected_corpus.location)?;
                 self.undoer = default_undoer();
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn export_to_graphml(&self, location: &Path, jobs: &JobExecutor) {
+        if let Some(selected_corpus) = self.selected_corpus.clone() {
+            let corpus_cache = self.corpus_cache.clone();
+            let job_title = format!("Exporting {}", location.to_string_lossy());
+            let location = location.to_path_buf();
+            jobs.add(
+                &job_title,
+                move |job| {
+                    if let Some(graph) = corpus_cache.get(&selected_corpus)? {
+                        let outfile = File::create(location)?;
+                        let buffered_writer = BufWriter::new(outfile);
+                        let graph = graph.read();
+                        graphannis_core::graph::serialization::graphml::export_stable_order(
+                            &graph,
+                            None,
+                            buffered_writer,
+                            |msg| {
+                                job.update_message(msg);
+                            },
+                        )?;
+                    }
+
+                    Ok(())
+                },
+                |_, _| {},
+            );
+        }
     }
 
     pub(crate) fn has_undo(&self) -> bool {
@@ -276,7 +320,7 @@ impl Project {
     #[cfg(test)]
     pub(crate) fn get_selected_graph(&self) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
         if let Some(corpus) = &self.selected_corpus {
-            let graph = self.corpus_cache.get(&corpus.name, &corpus.location)?;
+            let graph = self.corpus_cache.get(&corpus)?;
             Ok(graph)
         } else {
             Ok(None)
@@ -292,9 +336,7 @@ impl Project {
             move |job| {
                 if let Some(selected_corpus) = &selected_corpus {
                     job.update_message("Loading corpus from disk");
-                    if let Some(graph) =
-                        corpus_cache.get(&selected_corpus.name, &selected_corpus.location)?
-                    {
+                    if let Some(graph) = corpus_cache.get(selected_corpus)? {
                         job.update_message("Updating corpus structure");
                         let corpus_tree = CorpusTree::create_from_graph(graph, notifier)?;
                         Ok(Some(corpus_tree))

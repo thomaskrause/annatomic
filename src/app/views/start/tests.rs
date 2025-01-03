@@ -1,6 +1,8 @@
 use crate::{
-    app::tests::{create_app_with_corpus, create_test_harness, wait_for_corpus_tree},
-    assert_snapshots,
+    app::tests::{
+        create_app_with_corpus, create_test_harness, wait_for_corpus_tree, wait_until_jobs_finished,
+    },
+    assert_screenshots,
 };
 use egui::{accesskit::Role, Id};
 use egui_kittest::kittest::Queryable;
@@ -54,7 +56,7 @@ fn create_new_corpus() {
         }
     }
     // Add some runs, so that the toasts have time to disappear
-    for _ in 0..10 {
+    for _ in 0..20 {
         harness.step();
     }
 
@@ -85,27 +87,16 @@ fn delete_corpus() {
         let mut app_state = app_state.write();
         app_state.project.scheduled_for_deletion = Some("single_sentence".to_string());
     }
-    for i in 0..10_000 {
-        harness.step();
-        let app_state = app_state.read();
-        if i > 10 && app_state.corpus_tree.is_none() {
-            break;
-        }
-    }
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    wait_for_corpus_tree(&mut harness, app_state.clone());
     let confirmation_result = harness.try_wgpu_snapshot("delete_corpus_confirmation");
 
     harness.get_by_label_contains("Delete").click();
     harness.run();
-    for _ in 0..10_000 {
-        harness.step();
-        let app_state = app_state.read();
-        if !app_state.jobs.has_running_jobs() && app_state.corpus_tree.is_none() {
-            break;
-        }
-    }
-    harness.step();
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    wait_for_corpus_tree(&mut harness, app_state.clone());
     let final_result = harness.try_wgpu_snapshot("delete_corpus");
-    assert_snapshots!(confirmation_result, final_result);
+    assert_screenshots!(confirmation_result, final_result);
     {
         let app_state = app_state.read();
         assert!(app_state.project.selected_corpus.is_none());

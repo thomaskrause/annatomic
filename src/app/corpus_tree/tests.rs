@@ -2,7 +2,7 @@ use crate::{
     app::tests::{
         create_app_with_corpus, create_test_harness, wait_for_corpus_tree, wait_until_jobs_finished,
     },
-    assert_snapshots,
+    assert_screenshots,
 };
 use egui::accesskit::Role;
 use egui_kittest::kittest::{Key, Queryable};
@@ -91,7 +91,7 @@ fn undo_redo() {
     }
     wait_until_jobs_finished(&mut harness, app_state.clone());
     let r4 = harness.try_wgpu_snapshot("undo_redo_4");
-    assert_snapshots![r1, r2, r3, r4];
+    assert_screenshots![r1, r2, r3, r4];
 
     {
         let app_state = app_state.read();
