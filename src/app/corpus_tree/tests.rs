@@ -6,11 +6,12 @@ use crate::{
     },
     assert_screenshots,
 };
-use egui::{accesskit::Role, mutex::RwLock};
+use egui::{accesskit::Role, mutex::RwLock, Id};
 use egui_kittest::{
     kittest::{Key, Queryable},
     Harness,
 };
+use egui_phosphor::regular::{PLUS_CIRCLE, TRASH};
 use graphannis::aql;
 
 #[test]
@@ -132,4 +133,67 @@ fn undo_redo() {
             .count();
         assert_eq!(1, count);
     }
+}
+
+#[test]
+fn add_and_delete_entry() {
+    let app_state = create_app_with_corpus(
+        "single_sentence",
+        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+    );
+    let (mut harness, app_state) = create_test_harness(app_state);
+    harness.run();
+
+    // Select the corpus and the document
+    harness.get_by_label("single_sentence").click();
+    wait_for_corpus_tree(&mut harness, app_state.clone());
+    harness.get_by_label("single_sentence/zossen").click();
+    harness.run();
+
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    wait_for_corpus_tree(&mut harness, app_state.clone());
+
+    // Manually set the values for namespace/name
+    {
+        let mut app = app_state.write();
+        app.corpus_tree
+            .as_mut()
+            .unwrap()
+            .data
+            .new_entry
+            .current_namespace = "test".to_string();
+        app.corpus_tree
+            .as_mut()
+            .unwrap()
+            .data
+            .new_entry
+            .current_name = "example-name".to_string();
+    };
+    harness.run();
+
+    // Fill out the the value text field
+    let text_value = harness
+        .get_all_by_role(Role::TextInput)
+        .filter(|t| t.id().0 == Id::from("new-metadata-entry-value").value())
+        .next()
+        .unwrap();
+    text_value.type_text("example-value");
+    harness.run();
+
+    harness.get_by_label(PLUS_CIRCLE).click();
+
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    wait_for_corpus_tree(&mut harness, app_state.clone());
+
+    let r1 = harness.try_wgpu_snapshot("after-adding-metadata");
+
+    // Delete the entry again
+    let delete_buttons: Vec<_> = harness.get_all_by_label(TRASH).collect();
+    delete_buttons[3].click();
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    wait_for_corpus_tree(&mut harness, app_state.clone());
+
+    let r2 = harness.try_wgpu_snapshot("after-deleting-metadata");
+
+    assert_screenshots![r1, r2];
 }
