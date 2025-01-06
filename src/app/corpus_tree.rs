@@ -171,10 +171,7 @@ impl CorpusTree {
         };
 
         row.col(|ui| {
-            let delete_button = ui.add(Button::new(RichText::new(format!(
-                "{}",
-                egui_phosphor::regular::TRASH
-            ))));
+            let delete_button = ui.add(Button::new(RichText::new(egui_phosphor::regular::TRASH)));
             if delete_button.hovered() {
                 delete_button.show_tooltip_text("Delete metadata entry");
             }
@@ -251,10 +248,9 @@ impl CorpusTree {
 
     fn show_new_metadata_row(&mut self, row: &mut TableRow<'_, '_>, notifier: &Notifier) {
         row.col(|ui| {
-            let add_button = ui.add(Button::new(RichText::new(format!(
-                "{}",
-                egui_phosphor::regular::PLUS_CIRCLE
-            ))));
+            let add_button = ui.add(Button::new(RichText::new(
+                egui_phosphor::regular::PLUS_CIRCLE,
+            )));
             if add_button.hovered() {
                 add_button.show_tooltip_text("Add new metadata entry");
             }
