@@ -338,7 +338,7 @@ impl Project {
                     job.update_message("Loading corpus from disk");
                     if let Some(graph) = corpus_cache.get(selected_corpus)? {
                         job.update_message("Updating corpus structure");
-                        let corpus_tree = CorpusTree::create_from_graph(graph, notifier)?;
+                        let corpus_tree = CorpusTree::create_from_graph(graph)?;
                         Ok(Some(corpus_tree))
                     } else {
                         Ok(None)
@@ -359,7 +359,7 @@ impl Project {
 
                 if let Some(mut corpus_tree) = result {
                     // Keep the selected corpus node
-                    corpus_tree.select_corpus_node(old_selection);
+                    corpus_tree.select_corpus_node(old_selection, &notifier);
                     app.corpus_tree = Some(corpus_tree);
                 }
             },
