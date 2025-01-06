@@ -118,7 +118,7 @@ impl CorpusTree {
         });
     }
 
-    fn show_meta_editor(&mut self, ui: &mut Ui, notifier: &Notifier) {
+    fn show_meta_editor(&mut self, ui: &mut Ui, jobs: &JobExecutor, notifier: &Notifier) {
         if self.selected_corpus_node.is_some() {
             let text_style_body = egui::TextStyle::Body.resolve(ui.style());
 
@@ -146,7 +146,7 @@ impl CorpusTree {
                         self.data.node_annos.len() + 1,
                         |mut row| {
                             if row.index() < self.data.node_annos.len() {
-                                self.show_existing_metadata_entries(&mut row);
+                                self.show_existing_metadata_entries(&mut row, jobs);
                             } else {
                                 self.show_new_metadata_row(&mut row, notifier);
                             }
@@ -158,7 +158,7 @@ impl CorpusTree {
         }
     }
 
-    fn show_existing_metadata_entries(&mut self, row: &mut TableRow<'_, '_>) {
+    fn show_existing_metadata_entries(&mut self, row: &mut TableRow<'_, '_>, jobs: &JobExecutor) {
         // Next rows are the actual ones
         let mut entry_idx = row.index();
 
@@ -189,6 +189,7 @@ impl CorpusTree {
 
         let has_pending_changes = self.data.changed_keys.contains(&anno_key_for_row);
         let mut any_column_changed = false;
+        let mut any_lost_focus = false;
         let entry = &mut self.data.node_annos[entry_idx];
         row.col(|ui| {
             let mut text_edit = TextEdit::singleline(&mut entry.current_namespace);
@@ -199,6 +200,9 @@ impl CorpusTree {
 
             if text_edit.changed() {
                 any_column_changed = true;
+            }
+            if text_edit.lost_focus() {
+                any_lost_focus = true;
             }
         });
         row.col(|ui| {
@@ -211,6 +215,9 @@ impl CorpusTree {
             if text_edit.changed() {
                 any_column_changed = true;
             }
+            if text_edit.lost_focus() {
+                any_lost_focus = true;
+            }
         });
         row.col(|ui| {
             let mut text_edit = TextEdit::singleline(&mut entry.current_value);
@@ -221,6 +228,9 @@ impl CorpusTree {
 
             if text_edit.changed() {
                 any_column_changed = true;
+            }
+            if text_edit.lost_focus() {
+                any_lost_focus = true;
             }
         });
 
@@ -233,6 +243,9 @@ impl CorpusTree {
             } else {
                 self.data.changed_keys.insert(anno_key_for_row);
             }
+        }
+        if any_lost_focus && self.has_pending_updates() {
+            self.apply_pending_updates(jobs);
         }
     }
 
@@ -371,7 +384,9 @@ impl CorpusTree {
                 c1.push_id("corpus_structure", |ui| {
                     self.show_structure(ui, jobs, notifier)
                 });
-                c2.push_id("meta_editor", |ui| self.show_meta_editor(ui, notifier));
+                c2.push_id("meta_editor", |ui| {
+                    self.show_meta_editor(ui, jobs, notifier)
+                });
             });
         });
     }
