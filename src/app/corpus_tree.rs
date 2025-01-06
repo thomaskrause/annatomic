@@ -139,9 +139,12 @@ impl CorpusTree {
                         ui.label(RichText::new("Value").underline());
                     });
                 })
-                .body(|mut body| {
-                    for entry in self.data.node_annos.iter_mut() {
-                        body.row(text_style_body.size, |mut row| {
+                .body(|body| {
+                    body.rows(
+                        text_style_body.size,
+                        self.data.node_annos.len(),
+                        |mut row| {
+                            let entry = &mut self.data.node_annos[row.index()];
                             let anno_key_for_row = AnnoKey {
                                 ns: entry.original_namespace.clone().into(),
                                 name: entry.original_name.clone().into(),
@@ -190,8 +193,8 @@ impl CorpusTree {
                                     self.data.changed_keys.insert(anno_key_for_row);
                                 }
                             }
-                        });
-                    }
+                        },
+                    );
                 });
         } else {
             ui.label("Select a corpus/document node to edit it.");
