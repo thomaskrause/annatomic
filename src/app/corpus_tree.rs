@@ -124,12 +124,6 @@ impl CorpusTree {
 
     fn show_meta_editor(&mut self, ui: &mut Ui) {
         if self.selected_corpus_node.is_some() {
-            if self.has_pending_updates() {
-                ui.label(RichText::new("Has pending changes").color(Color32::LIGHT_RED));
-            } else {
-                ui.label("No pending changes");
-            }
-
             let text_style_body = egui::TextStyle::Body.resolve(ui.style());
             egui_extras::TableBuilder::new(ui)
                 .columns(Column::auto(), 2)

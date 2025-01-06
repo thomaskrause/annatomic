@@ -307,6 +307,14 @@ impl AnnatomicApp {
                     egui::gui_zoom::zoom_menu_buttons(ui);
                 });
                 ui.add_space(16.0);
+                ui.separator();
+                if self.has_pending_updates() {
+                    ui.label(RichText::new("Has pending changes").color(Color32::LIGHT_RED));
+                } else {
+                    ui.label("No pending changes");
+                }
+                ui.separator();
+                ui.add_space(16.0);
                 if self.args.dev {
                     if let Some(seconds) = frame_info.cpu_usage {
                         ui.label(format!("CPU usage: {:.1} ms / frame", seconds * 1000.0));
