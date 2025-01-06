@@ -181,6 +181,7 @@ impl CorpusTree {
                 if entry_idx >= self.data.node_annos.len() {
                     entry_idx = self.data.node_annos.len() - 1;
                 }
+                self.apply_pending_updates(jobs);
             };
         });
 
