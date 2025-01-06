@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
 use eframe::IntegrationInfo;
-use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText};
+use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme};
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
@@ -23,6 +23,9 @@ pub const QUIT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COM
 pub const SAVE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
 pub const UNDO_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Z);
 pub const REDO_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Y);
+
+pub const CHANGE_PENDING_COLOR_DARK: Color32 = Color32::from_rgb(160, 50, 50);
+pub const CHANGE_PENDING_COLOR_LIGHT: Color32 = Color32::from_rgb(255, 128, 128);
 
 /// Which main view to show in the app
 #[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
@@ -308,8 +311,13 @@ impl AnnatomicApp {
                 });
                 ui.add_space(16.0);
                 ui.separator();
+                let marker_color = if ui.ctx().theme() == Theme::Light {
+                    CHANGE_PENDING_COLOR_LIGHT
+                } else {
+                    CHANGE_PENDING_COLOR_DARK
+                };
                 if self.has_pending_updates() {
-                    ui.label(RichText::new("Has pending changes").color(Color32::LIGHT_RED));
+                    ui.label(RichText::new("Has pending changes").color(marker_color));
                 } else {
                     ui.label("No pending changes");
                 }

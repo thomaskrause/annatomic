@@ -2,8 +2,8 @@ use std::{collections::HashSet, fmt::Debug, sync::Arc};
 
 use anyhow::Context;
 use egui::{
-    mutex::RwLock, Button, CollapsingHeader, Color32, Id, RichText, ScrollArea, TextEdit, Ui,
-    Widget,
+    mutex::RwLock, Button, CollapsingHeader, Color32, Id, RichText, ScrollArea, TextEdit, Theme,
+    Ui, Widget,
 };
 use egui_extras::{Column, TableRow};
 use egui_notify::Toast;
@@ -21,8 +21,9 @@ use graphannis_core::{
     graph::{storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY, NODE_TYPE},
 };
 
-use super::job_executor::JobExecutor;
-use super::Notifier;
+use super::{
+    job_executor::JobExecutor, Notifier, CHANGE_PENDING_COLOR_DARK, CHANGE_PENDING_COLOR_LIGHT,
+};
 
 #[cfg(test)]
 mod tests;
@@ -120,6 +121,11 @@ impl CorpusTree {
     }
 
     fn show_meta_editor(&mut self, ui: &mut Ui, jobs: &JobExecutor, notifier: &Notifier) {
+        let marker_color = if ui.ctx().theme() == Theme::Light {
+            CHANGE_PENDING_COLOR_LIGHT
+        } else {
+            CHANGE_PENDING_COLOR_DARK
+        };
         if self.selected_corpus_node.is_some() {
             let text_style_body = egui::TextStyle::Body.resolve(ui.style());
 
@@ -147,7 +153,7 @@ impl CorpusTree {
                         self.data.node_annos.len() + 1,
                         |mut row| {
                             if row.index() < self.data.node_annos.len() {
-                                self.show_existing_metadata_entries(&mut row, jobs);
+                                self.show_existing_metadata_entries(&mut row, jobs, marker_color);
                             } else {
                                 self.show_new_metadata_row(&mut row, jobs, notifier);
                             }
@@ -159,7 +165,12 @@ impl CorpusTree {
         }
     }
 
-    fn show_existing_metadata_entries(&mut self, row: &mut TableRow<'_, '_>, jobs: &JobExecutor) {
+    fn show_existing_metadata_entries(
+        &mut self,
+        row: &mut TableRow<'_, '_>,
+        jobs: &JobExecutor,
+        marker_color: Color32,
+    ) {
         // Next rows are the actual ones
         let mut entry_idx = row.index();
 
@@ -193,7 +204,7 @@ impl CorpusTree {
         row.col(|ui| {
             let mut text_edit = TextEdit::singleline(&mut entry.current_namespace);
             if has_pending_changes {
-                text_edit = text_edit.background_color(Color32::LIGHT_RED);
+                text_edit = text_edit.background_color(marker_color);
             }
             let text_edit = text_edit.ui(ui);
 
@@ -207,7 +218,7 @@ impl CorpusTree {
         row.col(|ui| {
             let mut text_edit = TextEdit::singleline(&mut entry.current_name);
             if has_pending_changes {
-                text_edit = text_edit.background_color(Color32::LIGHT_RED);
+                text_edit = text_edit.background_color(marker_color);
             }
             let text_edit = text_edit.ui(ui);
 
@@ -221,7 +232,7 @@ impl CorpusTree {
         row.col(|ui| {
             let mut text_edit = TextEdit::singleline(&mut entry.current_value);
             if has_pending_changes {
-                text_edit = text_edit.background_color(Color32::LIGHT_RED);
+                text_edit = text_edit.background_color(marker_color);
             }
             let text_edit = text_edit.ui(ui);
 
@@ -452,7 +463,9 @@ impl CorpusTree {
                 let is_selected = self.selected_corpus_node.is_some_and(|n| n == parent);
 
                 let label = ui.selectable_label(is_selected, parent_node_name.clone());
-                if label.clicked() {
+                if !is_selected && label.gained_focus() {
+                    self.select_corpus_node(Some(parent), notifier);
+                } else if label.clicked() {
                     self.apply_pending_updates(jobs);
                     label.request_focus();
                     if is_selected {
