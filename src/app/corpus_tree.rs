@@ -2,7 +2,8 @@ use std::{collections::HashSet, fmt::Debug, sync::Arc};
 
 use anyhow::Context;
 use egui::{
-    mutex::RwLock, Button, CollapsingHeader, Color32, Key, RichText, ScrollArea, TextEdit, Ui,
+    mutex::RwLock, Button, CollapsingHeader, Color32, Id, RichText, ScrollArea, TextEdit, Ui,
+    Widget,
 };
 use egui_extras::{Column, TableRow};
 use egui_notify::Toast;
@@ -148,7 +149,7 @@ impl CorpusTree {
                             if row.index() < self.data.node_annos.len() {
                                 self.show_existing_metadata_entries(&mut row, jobs);
                             } else {
-                                self.show_new_metadata_row(&mut row, notifier);
+                                self.show_new_metadata_row(&mut row, jobs, notifier);
                             }
                         },
                     );
@@ -171,7 +172,7 @@ impl CorpusTree {
         };
 
         row.col(|ui| {
-            let delete_button = ui.add(Button::new(RichText::new(egui_phosphor::regular::TRASH)));
+            let delete_button = Button::new(RichText::new(egui_phosphor::regular::TRASH)).ui(ui);
             if delete_button.hovered() {
                 delete_button.show_tooltip_text("Delete metadata entry");
             }
@@ -194,7 +195,7 @@ impl CorpusTree {
             if has_pending_changes {
                 text_edit = text_edit.background_color(Color32::LIGHT_RED);
             }
-            let text_edit = ui.add(text_edit);
+            let text_edit = text_edit.ui(ui);
 
             if text_edit.changed() {
                 any_column_changed = true;
@@ -208,7 +209,7 @@ impl CorpusTree {
             if has_pending_changes {
                 text_edit = text_edit.background_color(Color32::LIGHT_RED);
             }
-            let text_edit = ui.add(text_edit);
+            let text_edit = text_edit.ui(ui);
 
             if text_edit.changed() {
                 any_column_changed = true;
@@ -222,7 +223,7 @@ impl CorpusTree {
             if has_pending_changes {
                 text_edit = text_edit.background_color(Color32::LIGHT_RED);
             }
-            let text_edit = ui.add(text_edit);
+            let text_edit = text_edit.ui(ui);
 
             if text_edit.changed() {
                 any_column_changed = true;
@@ -247,49 +248,40 @@ impl CorpusTree {
         }
     }
 
-    fn show_new_metadata_row(&mut self, row: &mut TableRow<'_, '_>, notifier: &Notifier) {
+    fn show_new_metadata_row(
+        &mut self,
+        row: &mut TableRow<'_, '_>,
+        jobs: &JobExecutor,
+        notifier: &Notifier,
+    ) {
         row.col(|ui| {
-            let add_button = ui.add(Button::new(RichText::new(
-                egui_phosphor::regular::PLUS_CIRCLE,
-            )));
+            let add_button = Button::new(RichText::new(egui_phosphor::regular::PLUS_CIRCLE)).ui(ui);
             if add_button.hovered() {
                 add_button.show_tooltip_text("Add new metadata entry");
             }
 
             if add_button.clicked() {
-                self.add_new_entry(notifier);
+                self.add_new_entry(jobs, notifier);
             }
         });
         row.col(|ui| {
-            if ui
-                .text_edit_singleline(&mut self.data.new_entry.current_namespace)
-                .lost_focus()
-                && ui.ctx().input(|input| input.key_pressed(Key::Enter))
-            {
-                self.add_new_entry(notifier);
-            }
+            TextEdit::singleline(&mut self.data.new_entry.current_namespace)
+                .id(Id::from("new-metadata-entry-ns"))
+                .ui(ui);
         });
         row.col(|ui| {
-            if ui
-                .text_edit_singleline(&mut self.data.new_entry.current_name)
-                .lost_focus()
-                && ui.ctx().input(|input| input.key_pressed(Key::Enter))
-            {
-                self.add_new_entry(notifier);
-            }
+            TextEdit::singleline(&mut self.data.new_entry.current_name)
+                .id(Id::from("new-metadata-entry-name"))
+                .ui(ui);
         });
         row.col(|ui| {
-            if ui
-                .text_edit_singleline(&mut self.data.new_entry.current_value)
-                .lost_focus()
-                && ui.ctx().input(|input| input.key_pressed(Key::Enter))
-            {
-                self.add_new_entry(notifier);
-            }
+            TextEdit::singleline(&mut self.data.new_entry.current_value)
+                .id(Id::from("new-metadata-entry-value"))
+                .ui(ui);
         });
     }
 
-    fn add_new_entry(&mut self, notifier: &Notifier) {
+    fn add_new_entry(&mut self, jobs: &JobExecutor, notifier: &Notifier) {
         if self.data.new_entry.current_name.is_empty() {
             notifier.add_toast(Toast::error("Cannot add entry with empty name"));
         } else if self.data.node_annos.iter().any(|e| {
@@ -316,6 +308,8 @@ impl CorpusTree {
             });
             self.data.node_annos.sort();
             self.data.new_entry = MetaEntry::default();
+
+            self.apply_pending_updates(jobs);
         }
     }
     pub(crate) fn has_pending_updates(&self) -> bool {

@@ -2,7 +2,7 @@ use std::{fs::File, io::BufReader};
 
 use crate::AnnatomicApp;
 use anyhow::Result;
-use egui::{Id, TextEdit, Ui};
+use egui::{Id, TextEdit, Ui, Widget};
 use egui_notify::Toast;
 use graphannis::model::AnnotationComponentType;
 
@@ -125,11 +125,11 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
     ui.vertical_centered(|ui| {
         let heading = ui.heading("Create new");
         let edit_id = Id::from("new-corpus-name");
-        let edit = TextEdit::singleline(&mut app.new_corpus_name)
+        TextEdit::singleline(&mut app.new_corpus_name)
             .hint_text("Corpus name")
             .id(edit_id)
-            .desired_width(heading.rect.width());
-        ui.add(edit);
+            .desired_width(heading.rect.width())
+            .ui(ui);
 
         if ui.button("Add").clicked() {
             app.apply_pending_updates();
