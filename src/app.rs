@@ -266,7 +266,7 @@ impl AnnatomicApp {
                     if ui
                         .add_enabled(
                             has_pending_updates,
-                            Button::new("Save pending changes")
+                            Button::new("Apply pending changes immediately")
                                 .shortcut_text(ctx.format_shortcut(&SAVE_SHORTCUT)),
                         )
                         .clicked()
