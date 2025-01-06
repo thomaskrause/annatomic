@@ -126,17 +126,23 @@ impl CorpusTree {
         } else {
             CHANGE_PENDING_COLOR_DARK
         };
+
         if self.selected_corpus_node.is_some() {
             let text_style_body = egui::TextStyle::Body.resolve(ui.style());
 
-            // Calculate the heights needed for each line. Values with newline need more lines.
+            // Use one third of the width for the namesspace/name information
+            // and the other 2/3 for the value. Subtract the space needed for
+            // the actions before.
+            let available_width = ui.available_width() - 40.0;
+            let namespace_name_width = available_width / 3.0;
+            let value_width = (available_width / 3.0) * 2.0;
 
+            // Calculate the heights needed for each line.
             egui_extras::TableBuilder::new(ui)
-                .columns(Column::auto(), 3)
-                .columns(Column::remainder(), 1)
-                .auto_shrink(false)
+                .columns(Column::exact(namespace_name_width / 2.0), 2)
+                .column(Column::exact(value_width))
+                .column(Column::auto())
                 .header(text_style_body.size + 2.0, |mut header| {
-                    header.col(|_ui| {});
                     header.col(|ui| {
                         ui.label(RichText::new("Namespace").underline());
                     });
@@ -146,10 +152,11 @@ impl CorpusTree {
                     header.col(|ui| {
                         ui.label(RichText::new("Value").underline());
                     });
+                    header.col(|_ui| {});
                 })
                 .body(|body| {
                     body.rows(
-                        text_style_body.size,
+                        text_style_body.size + 10.0,
                         self.data.node_annos.len() + 1,
                         |mut row| {
                             if row.index() < self.data.node_annos.len() {
@@ -182,6 +189,56 @@ impl CorpusTree {
             name: self.data.node_annos[entry_idx].original_name.clone().into(),
         };
 
+        let has_pending_changes = self.data.changed_keys.contains(&anno_key_for_row);
+        let mut any_column_changed = false;
+        let mut any_lost_focus = false;
+
+        row.col(|ui| {
+            let entry = &mut self.data.node_annos[entry_idx];
+            let mut text_edit = TextEdit::singleline(&mut entry.current_namespace);
+            if has_pending_changes {
+                text_edit = text_edit.background_color(marker_color);
+            }
+            let text_edit = text_edit.ui(ui);
+
+            if text_edit.changed() {
+                any_column_changed = true;
+            }
+            if text_edit.lost_focus() {
+                any_lost_focus = true;
+            }
+        });
+        row.col(|ui| {
+            let entry = &mut self.data.node_annos[entry_idx];
+            let mut text_edit = TextEdit::singleline(&mut entry.current_name);
+            if has_pending_changes {
+                text_edit = text_edit.background_color(marker_color);
+            }
+            let text_edit = text_edit.ui(ui);
+
+            if text_edit.changed() {
+                any_column_changed = true;
+            }
+            if text_edit.lost_focus() {
+                any_lost_focus = true;
+            }
+        });
+        row.col(|ui| {
+            let entry = &mut self.data.node_annos[entry_idx];
+            let mut text_edit = TextEdit::singleline(&mut entry.current_value);
+            if has_pending_changes {
+                text_edit = text_edit.background_color(marker_color);
+            }
+            let text_edit = text_edit.ui(ui);
+
+            if text_edit.changed() {
+                any_column_changed = true;
+            }
+            if text_edit.lost_focus() {
+                any_lost_focus = true;
+            }
+        });
+
         row.col(|ui| {
             let delete_button = Button::new(RichText::new(egui_phosphor::regular::TRASH)).ui(ui);
             if delete_button.hovered() {
@@ -197,53 +254,7 @@ impl CorpusTree {
             };
         });
 
-        let has_pending_changes = self.data.changed_keys.contains(&anno_key_for_row);
-        let mut any_column_changed = false;
-        let mut any_lost_focus = false;
         let entry = &mut self.data.node_annos[entry_idx];
-        row.col(|ui| {
-            let mut text_edit = TextEdit::singleline(&mut entry.current_namespace);
-            if has_pending_changes {
-                text_edit = text_edit.background_color(marker_color);
-            }
-            let text_edit = text_edit.ui(ui);
-
-            if text_edit.changed() {
-                any_column_changed = true;
-            }
-            if text_edit.lost_focus() {
-                any_lost_focus = true;
-            }
-        });
-        row.col(|ui| {
-            let mut text_edit = TextEdit::singleline(&mut entry.current_name);
-            if has_pending_changes {
-                text_edit = text_edit.background_color(marker_color);
-            }
-            let text_edit = text_edit.ui(ui);
-
-            if text_edit.changed() {
-                any_column_changed = true;
-            }
-            if text_edit.lost_focus() {
-                any_lost_focus = true;
-            }
-        });
-        row.col(|ui| {
-            let mut text_edit = TextEdit::singleline(&mut entry.current_value);
-            if has_pending_changes {
-                text_edit = text_edit.background_color(marker_color);
-            }
-            let text_edit = text_edit.ui(ui);
-
-            if text_edit.changed() {
-                any_column_changed = true;
-            }
-            if text_edit.lost_focus() {
-                any_lost_focus = true;
-            }
-        });
-
         if any_column_changed {
             if entry.current_value == entry.original_value
                 && entry.current_namespace == entry.original_namespace
@@ -254,6 +265,7 @@ impl CorpusTree {
                 self.data.changed_keys.insert(anno_key_for_row);
             }
         }
+
         if any_lost_focus && self.has_pending_updates() {
             self.apply_pending_updates(jobs);
         }
@@ -265,16 +277,6 @@ impl CorpusTree {
         jobs: &JobExecutor,
         notifier: &Notifier,
     ) {
-        row.col(|ui| {
-            let add_button = Button::new(RichText::new(egui_phosphor::regular::PLUS_CIRCLE)).ui(ui);
-            if add_button.hovered() {
-                add_button.show_tooltip_text("Add new metadata entry");
-            }
-
-            if add_button.clicked() {
-                self.add_new_entry(jobs, notifier);
-            }
-        });
         row.col(|ui| {
             TextEdit::singleline(&mut self.data.new_entry.current_namespace)
                 .id(Id::from("new-metadata-entry-ns"))
@@ -289,6 +291,16 @@ impl CorpusTree {
             TextEdit::singleline(&mut self.data.new_entry.current_value)
                 .id(Id::from("new-metadata-entry-value"))
                 .ui(ui);
+        });
+        row.col(|ui| {
+            let add_button = Button::new(RichText::new(egui_phosphor::regular::PLUS_CIRCLE)).ui(ui);
+            if add_button.hovered() {
+                add_button.show_tooltip_text("Add new metadata entry");
+            }
+
+            if add_button.clicked() {
+                self.add_new_entry(jobs, notifier);
+            }
         });
     }
 
@@ -382,9 +394,10 @@ impl CorpusTree {
     pub(crate) fn show(&mut self, ui: &mut Ui, jobs: &JobExecutor, notifier: &Notifier) {
         ui.group(|ui| {
             ui.heading("Corpus editor");
+
             ui.columns_const(|[c1, c2]| {
                 c1.push_id("corpus_structure", |ui| {
-                    self.show_structure(ui, jobs, notifier)
+                    self.show_structure(ui, jobs, notifier);
                 });
                 c2.push_id("meta_editor", |ui| {
                     self.show_meta_editor(ui, jobs, notifier)
