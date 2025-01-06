@@ -306,8 +306,10 @@ impl CorpusTree {
                 } else {
                     parent_node_name.clone()
                 };
-                if ui.selectable_label(is_selected, name).clicked() {
+                let label = ui.selectable_label(is_selected, name);
+                if label.clicked() {
                     self.apply_pending_updates(jobs);
+                    label.request_focus();
                     if is_selected {
                         self.select_corpus_node(None);
                     } else {
