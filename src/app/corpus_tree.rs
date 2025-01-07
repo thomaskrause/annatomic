@@ -398,7 +398,6 @@ impl CorpusTree {
             ui.columns_const(|[c1, c2]| {
                 c1.push_id("corpus_structure", |ui| {
                     self.show_structure(ui, jobs, notifier);
-                    ui.link("Open selected in editor");
                 });
                 c2.push_id("meta_editor", |ui| {
                     self.show_meta_editor(ui, jobs, notifier)

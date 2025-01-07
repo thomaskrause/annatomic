@@ -1,14 +1,10 @@
 use std::sync::Arc;
 
 use egui::{mutex::RwLock, Widget};
-use graphannis::AnnotationGraph;
+use graphannis::{graph::NodeID, AnnotationGraph};
 
-enum TokenEditorType {
-    Empty,
-    BaseToken,
-}
 pub(crate) struct TokenEditor {
-    inner_type: TokenEditorType,
+    node_id: NodeID,
     graph: Arc<RwLock<AnnotationGraph>>,
 }
 
