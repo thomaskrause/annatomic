@@ -364,7 +364,6 @@ impl Project {
                             notifier,
                         )?;
                         return Ok((Some(graph), Some(corpus_tree)));
-                    } else {
                     }
                 }
                 Ok((None, None))
