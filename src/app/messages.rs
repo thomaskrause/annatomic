@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt::Debug, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::Error;
 use egui::{mutex::RwLock, Context};

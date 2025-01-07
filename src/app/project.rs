@@ -368,6 +368,9 @@ impl Project {
                 // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
                 let old_graph = app.graph.take();
                 let old_corpus_tree = app.corpus_tree.take();
+                let old_selection = old_corpus_tree
+                    .as_ref()
+                    .and_then(|ct| ct.selected_corpus_node);
                 rayon::spawn(move || {
                     std::mem::drop(old_graph);
                     std::mem::drop(old_corpus_tree);
@@ -376,7 +379,8 @@ impl Project {
                 if let Some(graph) = graph {
                     app.graph = Some(graph);
                 }
-                if let Some(corpus_tree) = corpus_tree {
+                if let Some(mut corpus_tree) = corpus_tree {
+                    corpus_tree.select_corpus_node(old_selection);
                     app.corpus_tree = Some(corpus_tree);
                 }
             },

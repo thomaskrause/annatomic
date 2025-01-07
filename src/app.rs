@@ -7,7 +7,6 @@ use eframe::IntegrationInfo;
 use egui::{
     mutex::RwLock, Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme,
 };
-use egui_notify::Toast;
 use graphannis::{graph::NodeID, AnnotationGraph};
 use job_executor::JobExecutor;
 use messages::Notifier;
