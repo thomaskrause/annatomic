@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader};
 
-use crate::AnnatomicApp;
+use crate::{app::MainView, AnnatomicApp};
 use anyhow::Result;
 use egui::{Id, TextEdit, Ui, Widget};
 use egui_notify::Toast;
@@ -154,6 +154,11 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
     if let Some(corpus_tree) = &mut app.corpus_tree {
+        if let Some(selected_node) = &corpus_tree.selected_corpus_node {
+            if ui.link("Open selected in editor").clicked() {
+                app.main_view = MainView::EditDocument(*selected_node);
+            }
+        }
         corpus_tree.show(ui, &app.jobs, &app.notifier);
     } else {
         ui.label("Select a corpus to edit it.");

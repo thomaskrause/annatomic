@@ -5,12 +5,14 @@ use clap::Parser;
 use corpus_tree::CorpusTree;
 use eframe::IntegrationInfo;
 use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme};
+use graphannis::graph::NodeID;
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
 use serde::{Deserialize, Serialize};
 
 mod corpus_tree;
+mod editors;
 mod job_executor;
 mod messages;
 mod project;
@@ -32,6 +34,7 @@ pub const CHANGE_PENDING_COLOR_LIGHT: Color32 = Color32::from_rgb(255, 128, 128)
 pub(crate) enum MainView {
     #[default]
     Start,
+    EditDocument(NodeID),
     Demo,
 }
 
@@ -340,6 +343,7 @@ impl AnnatomicApp {
                 self.notifier.show(ctx);
                 let response = match self.main_view {
                     MainView::Start => views::start::show(ui, self),
+                    MainView::EditDocument(_node_id) => views::edit::show(ui, self),
                     MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {
