@@ -153,9 +153,11 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
     if let Some(corpus_tree) = &mut app.corpus_tree {
-        if let Some(selected_node) = &corpus_tree.selected_corpus_node {
+        if let Some(node_id) = &corpus_tree.selected_corpus_node {
+            let node_id = *node_id;
             if ui.link("Open selected in editor").clicked() {
-                app.main_view = MainView::EditDocument(*selected_node);
+                app.main_view = MainView::EditDocument { node_id };
+                app.project.update_editor_content(app.main_view.clone());
             }
         }
         corpus_tree.show(ui);

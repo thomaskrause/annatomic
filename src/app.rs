@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
+use editors::DocumentEditor;
 use eframe::IntegrationInfo;
 use egui::{
     mutex::RwLock, Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme,
@@ -36,7 +37,9 @@ pub const CHANGE_PENDING_COLOR_LIGHT: Color32 = Color32::from_rgb(255, 128, 128)
 pub(crate) enum MainView {
     #[default]
     Start,
-    EditDocument(NodeID),
+    EditDocument {
+        node_id: NodeID,
+    },
     Demo,
 }
 
@@ -64,6 +67,8 @@ pub struct AnnatomicApp {
     #[serde(skip)]
     pub(crate) graph: Option<Arc<RwLock<AnnotationGraph>>>,
     #[serde(skip)]
+    pub(crate) document_editor: Option<DocumentEditor>,
+    #[serde(skip)]
     pub(crate) corpus_tree: Option<CorpusTree>,
     #[serde(skip)]
     shutdown_request: ShutdownRequest,
@@ -90,6 +95,7 @@ impl Default for AnnatomicApp {
             args: AnnatomicArgs::default(),
             graph: None,
             corpus_tree: None,
+            document_editor: None,
             shutdown_request: ShutdownRequest::None,
         }
     }
@@ -114,8 +120,11 @@ impl AnnatomicApp {
         // Set fonts once
         app.set_fonts(&cc.egui_ctx);
         // Rebuild the state that is not persisted but calculated
-        app.project
-            .load_after_init(app.notifier.clone(), app.jobs.clone())?;
+        app.project.load_after_init(
+            app.notifier.clone(),
+            app.jobs.clone(),
+            app.main_view.clone(),
+        )?;
         Ok(app)
     }
 
@@ -349,7 +358,7 @@ impl AnnatomicApp {
                 self.notifier.show(ctx);
                 let response = match self.main_view {
                     MainView::Start => views::start::show(ui, self),
-                    MainView::EditDocument(_node_id) => views::edit::show(ui, self),
+                    MainView::EditDocument { .. } => views::edit::show(ui, self),
                     MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {

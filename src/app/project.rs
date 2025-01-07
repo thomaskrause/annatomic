@@ -16,13 +16,14 @@ use std::sync::Arc;
 use egui::util::undoer::{self, Undoer};
 use egui_notify::Toast;
 use graphannis::{
+    graph::NodeID,
     update::{GraphUpdate, UpdateEvent},
     AnnotationGraph,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::job_executor::JobExecutor;
+use super::{job_executor::JobExecutor, DocumentEditor, MainView};
 use super::{CorpusTree, Notifier, APP_ID};
 
 mod cache;
@@ -141,7 +142,7 @@ impl Project {
             }
         }
 
-        self.start_update_corpus_selection_job(true);
+        self.update_corpus_structure_job();
     }
 
     pub(crate) fn new_empty_corpus(&mut self, name: &str) -> Result<()> {
@@ -183,7 +184,7 @@ impl Project {
                         app.project.undoer.add_undo(selected_corpus);
                     }
                     app.project.updates_pending = false;
-                    app.project.start_update_corpus_selection_job(true);
+                    app.project.update_corpus_structure_job();
                 },
             );
         }
@@ -265,7 +266,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.project.start_update_corpus_selection_job(true);
+                        app.project.update_corpus_structure_job();
                     },
                 );
             }
@@ -305,7 +306,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.project.start_update_corpus_selection_job(true);
+                        app.project.update_corpus_structure_job();
                     },
                 );
             }
@@ -313,14 +314,23 @@ impl Project {
     }
 
     /// Rebuild the state that is not persisted but calculated
-    pub(crate) fn load_after_init(&mut self, notifier: Notifier, jobs: JobExecutor) -> Result<()> {
+    pub(crate) fn load_after_init(
+        &mut self,
+        notifier: Notifier,
+        jobs: JobExecutor,
+        main_view: MainView,
+    ) -> Result<()> {
         self.notifier = notifier;
         self.jobs = jobs;
         if let Some(selection) = &mut self.selected_corpus {
             selection.diff_to_last_save.clear();
             self.undoer.add_undo(selection);
         }
-        self.start_update_corpus_selection_job(true);
+        match main_view {
+            MainView::Start => self.update_corpus_structure_job(),
+            MainView::EditDocument { node_id } => self.update_document_editor_job(node_id),
+            MainView::Demo => {}
+        }
         Ok(())
     }
 
@@ -334,7 +344,7 @@ impl Project {
         }
     }
 
-    fn start_update_corpus_selection_job(&mut self, update_corpus_tree: bool) {
+    fn update_corpus_structure_job(&mut self) {
         let corpus_cache = self.corpus_cache.clone();
         let selected_corpus = self.selected_corpus.clone();
         let jobs_for_closure = self.jobs.clone();
@@ -345,19 +355,15 @@ impl Project {
                 if let Some(selected_corpus) = &selected_corpus {
                     job.update_message("Loading corpus from disk");
                     let graph = corpus_cache.get(selected_corpus)?;
-                    if update_corpus_tree {}
+
                     if let Some(graph) = graph {
-                        if update_corpus_tree {
-                            job.update_message("Updating corpus structure");
-                            let corpus_tree = CorpusTree::create_from_graph(
-                                graph.clone(),
-                                jobs_for_closure,
-                                notifier,
-                            )?;
-                            return Ok((Some(graph), Some(corpus_tree)));
-                        } else {
-                            return Ok((Some(graph), None));
-                        }
+                        job.update_message("Updating corpus structure");
+                        let corpus_tree = CorpusTree::create_from_graph(
+                            graph.clone(),
+                            jobs_for_closure,
+                            notifier,
+                        )?;
+                        return Ok((Some(graph), Some(corpus_tree)));
                     } else {
                     }
                 }
@@ -383,6 +389,40 @@ impl Project {
                     corpus_tree.select_corpus_node(old_selection);
                     app.corpus_tree = Some(corpus_tree);
                 }
+            },
+        );
+    }
+
+    /// Starts a job that updates the content of the current editor
+    pub(crate) fn update_editor_content(&mut self, main_view: MainView) {
+        match main_view {
+            MainView::Start => {
+                self.update_corpus_structure_job();
+            }
+            MainView::EditDocument { node_id } => {
+                self.update_document_editor_job(node_id);
+            }
+            MainView::Demo => {}
+        }
+    }
+
+    fn update_document_editor_job(&mut self, selected_node: NodeID) {
+        let corpus_cache = self.corpus_cache.clone();
+        let selected_corpus = self.selected_corpus.clone();
+
+        self.jobs.add(
+            "Load document for editor",
+            move |_| {
+                if let Some(selected_corpus) = &selected_corpus {
+                    if let Some(graph) = corpus_cache.get(selected_corpus)? {
+                        let editor = DocumentEditor::create_from_graph(selected_node, graph)?;
+                        return Ok(Some(editor));
+                    }
+                }
+                Ok(None)
+            },
+            |editor, app| {
+                app.document_editor = editor;
             },
         );
     }
