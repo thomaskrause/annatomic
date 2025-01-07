@@ -3,14 +3,16 @@ use std::{
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result};
 use cache::CorpusCache;
 
 #[cfg(test)]
 use egui::mutex::RwLock;
+#[cfg(test)]
+use std::sync::Arc;
+
 use egui::util::undoer::{self, Undoer};
 use egui_notify::Toast;
 use graphannis::{
@@ -57,7 +59,9 @@ pub(crate) struct Project {
     #[serde(skip)]
     corpus_cache: CorpusCache,
     #[serde(skip)]
-    notifier: Arc<Notifier>,
+    notifier: Notifier,
+    #[serde(skip)]
+    jobs: JobExecutor,
     #[serde(skip)]
     undoer: Undoer<Corpus>,
 }
@@ -71,7 +75,7 @@ fn default_undoer() -> Undoer<Corpus> {
 }
 
 impl Project {
-    pub(crate) fn new(notifier: Arc<Notifier>) -> Self {
+    pub(crate) fn new(notifier: Notifier, jobs: JobExecutor) -> Self {
         Self {
             updates_pending: false,
             selected_corpus: None,
@@ -79,6 +83,7 @@ impl Project {
             scheduled_for_deletion: None,
             corpus_locations: BTreeMap::new(),
             notifier,
+            jobs,
             undoer: default_undoer(),
         }
     }
@@ -90,11 +95,11 @@ impl Project {
         Ok(result)
     }
 
-    pub(crate) fn delete_corpus(&mut self, jobs: &JobExecutor, corpus_name: String) {
+    pub(crate) fn delete_corpus(&mut self, corpus_name: String) {
         // Unselect corpus if necessary
         if let Some(selection) = &self.selected_corpus {
             if selection.name == corpus_name {
-                self.select_corpus(jobs, None);
+                self.select_corpus(None);
             }
         }
         // Delete the folder where the corpus is stored
@@ -103,7 +108,7 @@ impl Project {
                 "Deleting corpus \"{corpus_name}\" from {}",
                 location.to_string_lossy()
             );
-            jobs.add(
+            self.jobs.add(
                 &title,
                 move |_job| {
                     std::fs::remove_dir_all(location)?;
@@ -115,7 +120,7 @@ impl Project {
         self.scheduled_for_deletion = None;
     }
 
-    pub(crate) fn select_corpus(&mut self, jobs: &JobExecutor, selection: Option<String>) {
+    pub(crate) fn select_corpus(&mut self, selection: Option<String>) {
         // Do nothing if the corpus is already selected
         if let Some(selected_corpus) = &self.selected_corpus {
             if Some(&selected_corpus.name) == selection.as_ref() {
@@ -136,7 +141,7 @@ impl Project {
             }
         }
 
-        self.schedule_corpus_tree_update(jobs);
+        self.start_update_corpus_selection_job(true);
     }
 
     pub(crate) fn new_empty_corpus(&mut self, name: &str) -> Result<()> {
@@ -148,11 +153,11 @@ impl Project {
         Ok(())
     }
 
-    pub(crate) fn add_changeset(&mut self, jobs: &JobExecutor, mut update: GraphUpdate) {
+    pub(crate) fn add_changeset(&mut self, mut update: GraphUpdate) {
         if let Some(selected_corpus) = self.selected_corpus.clone() {
             self.updates_pending = true;
             let corpus_cache = self.corpus_cache.clone();
-            jobs.add(
+            self.jobs.add(
                 "Updating corpus",
                 move |job| {
                     job.update_message("Storing update events");
@@ -178,7 +183,7 @@ impl Project {
                         app.project.undoer.add_undo(selected_corpus);
                     }
                     app.project.updates_pending = false;
-                    app.project.schedule_corpus_tree_update(&app.jobs);
+                    app.project.start_update_corpus_selection_job(true);
                 },
             );
         }
@@ -197,12 +202,12 @@ impl Project {
         Ok(())
     }
 
-    pub(crate) fn export_to_graphml(&self, location: &Path, jobs: &JobExecutor) {
+    pub(crate) fn export_to_graphml(&self, location: &Path) {
         if let Some(selected_corpus) = self.selected_corpus.clone() {
             let corpus_cache = self.corpus_cache.clone();
             let job_title = format!("Exporting {}", location.to_string_lossy());
             let location = location.to_path_buf();
-            jobs.add(
+            self.jobs.add(
                 &job_title,
                 move |job| {
                     if let Some(graph) = corpus_cache.get(&selected_corpus)? {
@@ -232,13 +237,13 @@ impl Project {
             .is_some_and(|c| self.undoer.has_undo(c))
     }
 
-    pub(crate) fn undo(&mut self, jobs: &JobExecutor) {
+    pub(crate) fn undo(&mut self) {
         if let Some(selected_corpus) = &mut self.selected_corpus {
             if let Some(new_state) = self.undoer.undo(selected_corpus).cloned() {
                 self.selected_corpus = Some(new_state.clone());
                 let corpus_cache = self.corpus_cache.clone();
                 // Reload the corpus from disk and apply the outstanding changes
-                jobs.add(
+                self.jobs.add(
                     "Undoing changes",
                     move |j| {
                         j.update_message("Loading old corpus state from disk");
@@ -260,7 +265,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.project.schedule_corpus_tree_update(&app.jobs);
+                        app.project.start_update_corpus_selection_job(true);
                     },
                 );
             }
@@ -273,13 +278,13 @@ impl Project {
             .is_some_and(|c| self.undoer.has_redo(c))
     }
 
-    pub(crate) fn redo(&mut self, jobs: &JobExecutor) {
+    pub(crate) fn redo(&mut self) {
         if let Some(selected_corpus) = &mut self.selected_corpus {
             if let Some(new_state) = self.undoer.redo(selected_corpus).cloned() {
                 self.selected_corpus = Some(new_state.clone());
                 let corpus_cache = self.corpus_cache.clone();
                 // Reload the corpus from disk and apply the outstanding changes
-                jobs.add(
+                self.jobs.add(
                     "Redoing changes",
                     move |j| {
                         j.update_message("Loading old corpus state from disk");
@@ -300,7 +305,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.project.schedule_corpus_tree_update(&app.jobs);
+                        app.project.start_update_corpus_selection_job(true);
                     },
                 );
             }
@@ -308,12 +313,14 @@ impl Project {
     }
 
     /// Rebuild the state that is not persisted but calculated
-    pub(crate) fn load_after_init(&mut self, jobs: &JobExecutor) -> Result<()> {
+    pub(crate) fn load_after_init(&mut self, notifier: Notifier, jobs: JobExecutor) -> Result<()> {
+        self.notifier = notifier;
+        self.jobs = jobs;
         if let Some(selection) = &mut self.selected_corpus {
             selection.diff_to_last_save.clear();
             self.undoer.add_undo(selection);
         }
-        self.schedule_corpus_tree_update(jobs);
+        self.start_update_corpus_selection_job(true);
         Ok(())
     }
 
@@ -327,39 +334,49 @@ impl Project {
         }
     }
 
-    fn schedule_corpus_tree_update(&mut self, jobs: &JobExecutor) {
-        let notifier = self.notifier.clone();
+    fn start_update_corpus_selection_job(&mut self, update_corpus_tree: bool) {
         let corpus_cache = self.corpus_cache.clone();
         let selected_corpus = self.selected_corpus.clone();
-        jobs.add(
+        let jobs_for_closure = self.jobs.clone();
+        let notifier = self.notifier.clone();
+        self.jobs.add(
             "Updating corpus selection",
             move |job| {
                 if let Some(selected_corpus) = &selected_corpus {
                     job.update_message("Loading corpus from disk");
-                    if let Some(graph) = corpus_cache.get(selected_corpus)? {
-                        job.update_message("Updating corpus structure");
-                        let corpus_tree = CorpusTree::create_from_graph(graph)?;
-                        Ok(Some(corpus_tree))
+                    let graph = corpus_cache.get(selected_corpus)?;
+                    if update_corpus_tree {}
+                    if let Some(graph) = graph {
+                        if update_corpus_tree {
+                            job.update_message("Updating corpus structure");
+                            let corpus_tree = CorpusTree::create_from_graph(
+                                graph.clone(),
+                                jobs_for_closure,
+                                notifier,
+                            )?;
+                            return Ok((Some(graph), Some(corpus_tree)));
+                        } else {
+                            return Ok((Some(graph), None));
+                        }
                     } else {
-                        Ok(None)
                     }
-                } else {
-                    Ok(None)
                 }
+                Ok((None, None))
             },
-            move |result, app| {
-                let old_selection = app
-                    .corpus_tree
-                    .as_ref()
-                    .and_then(|ct| ct.selected_corpus_node);
-                // Drop any old corpus tree in a background thread.
+            move |(graph, corpus_tree), app| {
+                // Drop any old corpus tree and graph in a background thread.
                 // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
+                let old_graph = app.graph.take();
                 let old_corpus_tree = app.corpus_tree.take();
-                rayon::spawn(move || std::mem::drop(old_corpus_tree));
+                rayon::spawn(move || {
+                    std::mem::drop(old_graph);
+                    std::mem::drop(old_corpus_tree);
+                });
 
-                if let Some(mut corpus_tree) = result {
-                    // Keep the selected corpus node
-                    corpus_tree.select_corpus_node(old_selection, &notifier);
+                if let Some(graph) = graph {
+                    app.graph = Some(graph);
+                }
+                if let Some(corpus_tree) = corpus_tree {
                     app.corpus_tree = Some(corpus_tree);
                 }
             },

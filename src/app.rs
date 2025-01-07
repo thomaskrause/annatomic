@@ -4,8 +4,11 @@ use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
 use eframe::IntegrationInfo;
-use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme};
-use graphannis::graph::NodeID;
+use egui::{
+    mutex::RwLock, Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme,
+};
+use egui_notify::Toast;
+use graphannis::{graph::NodeID, AnnotationGraph};
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
@@ -60,29 +63,33 @@ pub struct AnnatomicApp {
     new_corpus_name: String,
     project: Project,
     #[serde(skip)]
+    pub(crate) graph: Option<Arc<RwLock<AnnotationGraph>>>,
+    #[serde(skip)]
     pub(crate) corpus_tree: Option<CorpusTree>,
     #[serde(skip)]
     shutdown_request: ShutdownRequest,
     #[serde(skip)]
     jobs: JobExecutor,
     #[serde(skip)]
-    notifier: Arc<Notifier>,
+    notifier: Notifier,
     #[serde(skip)]
     args: AnnatomicArgs,
 }
 
 impl Default for AnnatomicApp {
     fn default() -> Self {
-        let notifier = Arc::new(Notifier::default());
-        let project = Project::new(notifier.clone());
+        let notifier = Notifier::default();
+        let jobs = JobExecutor::default();
+        let project = Project::new(notifier.clone(), jobs.clone());
 
         Self {
             main_view: MainView::Start,
             new_corpus_name: String::default(),
             project,
-            jobs: JobExecutor::default(),
+            jobs,
             notifier,
             args: AnnatomicArgs::default(),
+            graph: None,
             corpus_tree: None,
             shutdown_request: ShutdownRequest::None,
         }
@@ -108,8 +115,8 @@ impl AnnatomicApp {
         // Set fonts once
         app.set_fonts(&cc.egui_ctx);
         // Rebuild the state that is not persisted but calculated
-        app.project.load_after_init(&app.jobs)?;
-
+        app.project
+            .load_after_init(app.notifier.clone(), app.jobs.clone())?;
         Ok(app)
     }
 
@@ -186,7 +193,7 @@ impl AnnatomicApp {
                         )
                         .clicked()
                     {
-                        self.project.delete_corpus(&self.jobs, corpus_name);
+                        self.project.delete_corpus(corpus_name);
                     }
                 });
             });
@@ -195,7 +202,7 @@ impl AnnatomicApp {
 
     fn apply_pending_updates(&mut self) {
         if let Some(ct) = self.corpus_tree.as_mut() {
-            ct.apply_pending_updates(&self.jobs);
+            ct.apply_pending_updates();
         }
     }
 
@@ -212,10 +219,10 @@ impl AnnatomicApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if ctx.input_mut(|i| i.consume_shortcut(&UNDO_SHORTCUT)) {
-            self.project.undo(&self.jobs);
+            self.project.undo();
         }
         if ctx.input_mut(|i| i.consume_shortcut(&REDO_SHORTCUT)) {
-            self.project.redo(&self.jobs);
+            self.project.redo();
         }
         if ctx.input_mut(|i| i.consume_shortcut(&SAVE_SHORTCUT)) {
             self.apply_pending_updates();
@@ -294,7 +301,7 @@ impl AnnatomicApp {
                         )
                         .clicked()
                     {
-                        self.project.undo(&self.jobs);
+                        self.project.undo();
                     }
                     if ui
                         .add_enabled(
@@ -303,7 +310,7 @@ impl AnnatomicApp {
                         )
                         .clicked()
                     {
-                        self.project.redo(&self.jobs);
+                        self.project.redo();
                     }
                 });
                 ui.menu_button("View", |ui| {

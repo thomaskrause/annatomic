@@ -49,10 +49,10 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[String]) -> 
                     app.apply_pending_updates();
                     if is_selected {
                         // Unselect the current corpus
-                        app.project.select_corpus(&app.jobs, None);
+                        app.project.select_corpus(None);
                     } else {
                         // Select this corpus
-                        app.project.select_corpus(&app.jobs, Some(c.clone()));
+                        app.project.select_corpus(Some(c.clone()));
                     }
                 }
             }
@@ -99,7 +99,7 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                     },
                     |(name, location), app| {
                         app.project.corpus_locations.insert(name.clone(), location);
-                        app.project.select_corpus(&app.jobs, Some(name));
+                        app.project.select_corpus(Some(name));
                     },
                 );
             }
@@ -115,7 +115,7 @@ fn export_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                 .set_can_create_directories(true)
                 .add_filter("GraphML (*.graphml)", &["graphml"]);
             if let Some(path) = dlg.save_file() {
-                app.project.export_to_graphml(&path, &app.jobs);
+                app.project.export_to_graphml(&path);
             }
         }
     });
@@ -143,8 +143,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                     "Corpus \"{}\" added",
                     &app.new_corpus_name
                 )));
-                app.project
-                    .select_corpus(&app.jobs, Some(app.new_corpus_name.clone()));
+                app.project.select_corpus(Some(app.new_corpus_name.clone()));
                 app.new_corpus_name = String::new();
                 ui.memory_mut(|mem| mem.surrender_focus(edit_id));
             }
@@ -159,7 +158,7 @@ fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
                 app.main_view = MainView::EditDocument(*selected_node);
             }
         }
-        corpus_tree.show(ui, &app.jobs, &app.notifier);
+        corpus_tree.show(ui);
     } else {
         ui.label("Select a corpus to edit it.");
     }

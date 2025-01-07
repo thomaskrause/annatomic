@@ -9,7 +9,7 @@ pub(crate) struct TokenEditor {
 }
 
 impl Widget for TokenEditor {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+    fn ui(self, _ui: &mut egui::Ui) -> egui::Response {
         todo!()
     }
 }

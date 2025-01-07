@@ -25,7 +25,6 @@ log = "0.4"
 # You only need serde if you want app persistence:
 anyhow = "1.0.94"
 clap = { version = "4.5.23", features = ["derive"] }
-crossbeam-queue = "0.3.11"
 egui-notify = "0.18.0"
 egui-phosphor = "0.8.0"
 graphannis = "3.5.1"

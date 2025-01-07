@@ -96,8 +96,7 @@ fn undo_redo() {
     // Undo last change
     {
         let mut app_state = app_state.write();
-        let mut jobs = app_state.jobs.clone();
-        app_state.project.undo(&mut jobs);
+        app_state.project.undo();
     }
     wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
@@ -110,8 +109,7 @@ fn undo_redo() {
     // Redo, so the name should be "zossen-2" again
     {
         let mut app_state = app_state.write();
-        let mut jobs = app_state.jobs.clone();
-        app_state.project.redo(&mut jobs);
+        app_state.project.redo();
     }
     wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
