@@ -11,7 +11,7 @@ use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
 use serde::{Deserialize, Serialize};
-use views::{load_components_for_view, Editor};
+use views::Editor;
 
 mod corpus_tree;
 mod editors;
@@ -167,7 +167,77 @@ impl AnnatomicApp {
     pub(crate) fn change_view(&mut self, new_view: MainView) {
         if self.main_view != new_view {
             self.main_view = new_view;
-            load_components_for_view(self, true);
+            self.load_editor(true);
+        }
+    }
+
+    pub(crate) fn load_editor(&mut self, force_refresh: bool) {
+        let selected_corpus_node = {
+            self.current_editor
+                .get()
+                .and_then(|editor| editor.get_selected_corpus_node())
+        };
+        match self.main_view {
+            MainView::Start => {
+                if let Some(corpus) = &self.project.selected_corpus {
+                    let job_title = "Creating corpus tree editor";
+
+                    let needs_refresh = force_refresh || self.current_editor.get().is_none();
+                    if needs_refresh && !self.jobs.has_active_job_with_title(job_title) {
+                        self.current_editor = OnceLock::new();
+
+                        let corpus_cache = self.project.corpus_cache.clone();
+                        let jobs = self.jobs.clone();
+                        let notifier = self.notifier.clone();
+                        let location = corpus.location.clone();
+                        self.jobs.add(
+                            job_title,
+                            move |_| {
+                                let graph = corpus_cache.get(&location)?;
+                                let corpus_tree = CorpusTree::create_from_graph(
+                                    graph,
+                                    selected_corpus_node,
+                                    jobs,
+                                    notifier,
+                                )?;
+                                Ok(corpus_tree)
+                            },
+                            |corpus_tree, app| {
+                                app.current_editor.get_or_init(|| Box::new(corpus_tree));
+                            },
+                        );
+                    }
+                } else {
+                    self.current_editor = OnceLock::new();
+                }
+            }
+            MainView::EditDocument { node_id } => {
+                if let Some(corpus) = &self.project.selected_corpus {
+                    let job_title = "Creating document editor";
+                    let needs_refresh = force_refresh || self.current_editor.get().is_none();
+                    if needs_refresh && !self.jobs.has_active_job_with_title(job_title) {
+                        self.current_editor = OnceLock::new();
+                        let corpus_cache = self.project.corpus_cache.clone();
+                        let location = corpus.location.clone();
+                        self.jobs.add(
+                            job_title,
+                            move |_| {
+                                let graph = corpus_cache.get(&location)?;
+                                let document_editor =
+                                    DocumentEditor::create_from_graph(node_id, graph)?;
+
+                                Ok(document_editor)
+                            },
+                            |document_editor, app| {
+                                app.current_editor.get_or_init(|| Box::new(document_editor));
+                            },
+                        );
+                    }
+                }
+            }
+            MainView::Demo => {
+                self.current_editor = OnceLock::new();
+            }
         }
     }
 
@@ -208,7 +278,7 @@ impl AnnatomicApp {
 
     pub(crate) fn select_corpus(&mut self, selection: Option<String>) {
         self.project.select_corpus(selection);
-        load_components_for_view(self, true);
+        self.load_editor(true);
     }
 
     fn apply_pending_updates(&mut self) {
@@ -380,7 +450,7 @@ impl eframe::App for AnnatomicApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        load_components_for_view(self, false);
+        self.load_editor(false);
         self.show(ctx, frame.info());
     }
 

@@ -17,7 +17,7 @@ use graphannis::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{job_executor::JobExecutor, load_components_for_view};
+use super::job_executor::JobExecutor;
 use super::{Notifier, APP_ID};
 
 #[cfg(test)]
@@ -112,7 +112,7 @@ impl Project {
                 },
                 |_result, app| {
                     app.project.select_corpus(None);
-                    load_components_for_view(app, true);
+                    app.load_editor(true);
                 },
             );
         }
@@ -254,7 +254,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        load_components_for_view(app, true);
+                        app.load_editor(true);
                     },
                 );
             }
@@ -292,7 +292,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        load_components_for_view(app, true);
+                        app.load_editor(true);
                     },
                 );
             }
