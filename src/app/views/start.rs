@@ -8,8 +8,6 @@ use graphannis::model::AnnotationComponentType;
 
 use rfd::FileDialog;
 
-use super::Editor;
-
 #[cfg(test)]
 mod tests;
 
@@ -155,17 +153,16 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
     let selected_node_id = app
-        .view_components
-        .corpus_tree
+        .current_editor
         .get()
-        .and_then(|ct| ct.get_selected_corpus_node());
+        .and_then(|editor| editor.get_selected_corpus_node());
     if let Some(node_id) = selected_node_id {
         if ui.link("Open selected in editor").clicked() {
             app.change_view(MainView::EditDocument { node_id });
         }
     }
-    if let Some(corpus_tree) = app.view_components.corpus_tree.get_mut() {
-        corpus_tree.show(ui);
+    if let Some(editor) = app.current_editor.get_mut() {
+        editor.show(ui);
     } else {
         ui.label("Select a corpus to edit it.");
     }

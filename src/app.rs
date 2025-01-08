@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 use clap::Parser;
@@ -11,7 +11,7 @@ use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
 use serde::{Deserialize, Serialize};
-use views::{load_components_for_view, Editor, LoadedViewComponents};
+use views::{load_components_for_view, Editor};
 
 mod corpus_tree;
 mod editors;
@@ -65,7 +65,7 @@ pub struct AnnatomicApp {
     new_corpus_name: String,
     project: Project,
     #[serde(skip)]
-    view_components: LoadedViewComponents,
+    current_editor: OnceLock<Box<dyn Editor>>,
     #[serde(skip)]
     shutdown_request: ShutdownRequest,
     #[serde(skip)]
@@ -89,7 +89,7 @@ impl Default for AnnatomicApp {
             jobs,
             notifier,
             args: AnnatomicArgs::default(),
-            view_components: LoadedViewComponents::default(),
+            current_editor: OnceLock::new(),
             shutdown_request: ShutdownRequest::None,
         }
     }
@@ -212,14 +212,14 @@ impl AnnatomicApp {
     }
 
     fn apply_pending_updates(&mut self) {
-        if let Some(ct) = self.view_components.corpus_tree.get_mut() {
-            ct.apply_pending_updates();
+        if let Some(editor) = self.current_editor.get_mut() {
+            editor.apply_pending_updates();
         }
     }
 
     fn has_pending_updates(&self) -> bool {
-        if let Some(ct) = self.view_components.corpus_tree.get() {
-            ct.has_pending_updates()
+        if let Some(editor) = self.current_editor.get() {
+            editor.has_pending_updates()
         } else {
             false
         }

@@ -116,10 +116,6 @@ impl CorpusTree {
         Ok(result)
     }
 
-    pub(crate) fn get_selected_corpus_node(&self) -> Option<NodeID> {
-        self.selected_corpus_node
-    }
-
     fn show_structure(&mut self, ui: &mut Ui) {
         let root_nodes: graphannis_core::errors::Result<Vec<_>> = self.gs.root_nodes().collect();
         let root_nodes = self
@@ -516,5 +512,9 @@ impl Editor for CorpusTree {
             self.data.node_annos.sort();
             self.data.changed_keys.clear();
         }
+    }
+
+    fn get_selected_corpus_node(&self) -> Option<NodeID> {
+        self.selected_corpus_node
     }
 }

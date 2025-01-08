@@ -70,4 +70,8 @@ impl Editor for DocumentEditor {
     }
 
     fn apply_pending_updates(&mut self) {}
+
+    fn get_selected_corpus_node(&self) -> Option<NodeID> {
+        None
+    }
 }

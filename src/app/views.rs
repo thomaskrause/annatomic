@@ -1,4 +1,5 @@
 use egui::Ui;
+use graphannis::graph::NodeID;
 
 use super::{AnnatomicApp, CorpusTree, DocumentEditor};
 use std::sync::OnceLock;
@@ -6,34 +7,27 @@ pub(crate) mod demo;
 pub(crate) mod edit;
 pub(crate) mod start;
 
-#[derive(Default)]
-pub(crate) struct LoadedViewComponents {
-    pub(crate) corpus_tree: OnceLock<CorpusTree>,
-    pub(crate) document_editor: OnceLock<DocumentEditor>,
-}
-
 pub(crate) trait Editor {
     fn show(&mut self, ui: &mut Ui);
     fn has_pending_updates(&self) -> bool;
     fn apply_pending_updates(&mut self);
+    fn get_selected_corpus_node(&self) -> Option<NodeID>;
 }
 
 pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bool) {
+    let selected_corpus_node = {
+        app.current_editor
+            .get()
+            .and_then(|editor| editor.get_selected_corpus_node())
+    };
     match app.main_view {
         super::MainView::Start => {
-            app.view_components.document_editor = OnceLock::new();
             if let Some(corpus) = &app.project.selected_corpus {
-                let job_title = "Creating corpus tree";
-                let selected_corpus_node = app
-                    .view_components
-                    .corpus_tree
-                    .get()
-                    .and_then(|ct| ct.get_selected_corpus_node());
+                let job_title = "Creating corpus tree editor";
 
-                let needs_refresh =
-                    force_refresh || app.view_components.corpus_tree.get().is_none();
+                let needs_refresh = force_refresh || app.current_editor.get().is_none();
                 if needs_refresh && !app.jobs.has_active_job_with_title(job_title) {
-                    app.view_components.corpus_tree = OnceLock::new();
+                    app.current_editor = OnceLock::new();
 
                     let corpus_cache = app.project.corpus_cache.clone();
                     let jobs = app.jobs.clone();
@@ -52,23 +46,20 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bo
                             Ok(corpus_tree)
                         },
                         |corpus_tree, app| {
-                            app.view_components.corpus_tree.get_or_init(|| corpus_tree);
+                            app.current_editor.get_or_init(|| Box::new(corpus_tree));
                         },
                     );
                 }
             } else {
-                app.view_components.corpus_tree = OnceLock::new();
-                app.view_components.document_editor = OnceLock::new();
+                app.current_editor = OnceLock::new();
             }
         }
         super::MainView::EditDocument { node_id } => {
-            app.view_components.corpus_tree = OnceLock::new();
-
             if let Some(corpus) = &app.project.selected_corpus {
                 let job_title = "Creating document editor";
-                let needs_refresh =
-                    force_refresh || app.view_components.corpus_tree.get().is_none();
+                let needs_refresh = force_refresh || app.current_editor.get().is_none();
                 if needs_refresh && !app.jobs.has_active_job_with_title(job_title) {
+                    app.current_editor = OnceLock::new();
                     let corpus_cache = app.project.corpus_cache.clone();
                     let location = corpus.location.clone();
                     app.jobs.add(
@@ -81,17 +72,14 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bo
                             Ok(document_editor)
                         },
                         |document_editor, app| {
-                            app.view_components
-                                .document_editor
-                                .get_or_init(|| document_editor);
+                            app.current_editor.get_or_init(|| Box::new(document_editor));
                         },
                     );
                 }
             }
         }
         super::MainView::Demo => {
-            app.view_components.corpus_tree = OnceLock::new();
-            app.view_components.document_editor = OnceLock::new();
+            app.current_editor = OnceLock::new();
         }
     }
 }
