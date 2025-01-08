@@ -57,7 +57,7 @@ pub(crate) fn wait_for_corpus_tree(
     for _ in 0..10_000 {
         harness.step();
         let app_state = app_state.read();
-        if app_state.get_corpus_tree().is_some() {
+        if app_state.view_components.corpus_tree.get().is_some() {
             break;
         }
     }

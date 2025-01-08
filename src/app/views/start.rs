@@ -8,8 +8,6 @@ use graphannis::model::AnnotationComponentType;
 
 use rfd::FileDialog;
 
-use super::LoadedViewComponents;
-
 #[cfg(test)]
 mod tests;
 

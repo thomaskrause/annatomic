@@ -26,7 +26,7 @@ fn select_corpus() {
             "single_sentence",
             app_state.project.selected_corpus.as_ref().unwrap().name
         );
-        assert!(app_state.corpus_tree.is_some());
+        assert!(app_state.view_components.corpus_tree.get().is_some());
     }
 
     harness.wgpu_snapshot("select_corpus");
@@ -51,7 +51,10 @@ fn create_new_corpus() {
     for i in 0..10_000 {
         harness.step();
         let app_state = app_state.read();
-        if i > 10 && app_state.corpus_tree.is_some() && app_state.notifier.is_empty() {
+        if i > 10
+            && app_state.view_components.corpus_tree.get().is_some()
+            && app_state.notifier.is_empty()
+        {
             break;
         }
     }
@@ -67,7 +70,7 @@ fn create_new_corpus() {
             "example",
             app_state.project.selected_corpus.as_ref().unwrap().name
         );
-        assert!(app_state.corpus_tree.is_some());
+        assert!(app_state.view_components.corpus_tree.get().is_some());
     }
 
     harness.wgpu_snapshot("create_new_corpus");
@@ -100,6 +103,6 @@ fn delete_corpus() {
     {
         let app_state = app_state.read();
         assert!(app_state.project.selected_corpus.is_none());
-        assert!(app_state.corpus_tree.is_none());
+        assert!(app_state.view_components.corpus_tree.get().is_none());
     }
 }

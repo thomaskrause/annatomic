@@ -8,21 +8,22 @@ use std::{
 use anyhow::{Context, Ok, Result};
 use cache::CorpusCache;
 
-use egui::mutex::RwLock;
-use std::sync::Arc;
-
 use egui::util::undoer::{self, Undoer};
 use egui_notify::Toast;
 use graphannis::{
-    graph::NodeID,
     update::{GraphUpdate, UpdateEvent},
     AnnotationGraph,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{job_executor::JobExecutor, DocumentEditor, LoadedViewComponents, MainView};
-use super::{CorpusTree, Notifier, APP_ID};
+use super::{job_executor::JobExecutor, LoadedViewComponents};
+use super::{Notifier, APP_ID};
+
+#[cfg(test)]
+use egui::mutex::RwLock;
+#[cfg(test)]
+use std::sync::Arc;
 
 mod cache;
 #[cfg(test)]

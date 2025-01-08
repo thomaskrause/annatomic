@@ -37,11 +37,36 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp) {
                 }
             } else {
                 app.view_components.corpus_tree = OnceLock::new();
+                app.view_components.document_editor = OnceLock::new();
             }
         }
-        super::MainView::EditDocument { .. } => {
+        super::MainView::EditDocument { node_id } => {
             app.view_components.corpus_tree = OnceLock::new();
-            app.view_components.document_editor = OnceLock::new();
+
+            if let Some(corpus) = &app.project.selected_corpus {
+                let job_title = "Creating document editor";
+                if app.view_components.document_editor.get().is_none()
+                    && !app.jobs.has_active_job_with_title(&job_title)
+                {
+                    let corpus_cache = app.project.corpus_cache.clone();
+                    let location = corpus.location.clone();
+                    app.jobs.add(
+                        &job_title,
+                        move |_| {
+                            let graph = corpus_cache.get(&location)?;
+                            let document_editor =
+                                DocumentEditor::create_from_graph(node_id, graph)?;
+
+                            Ok(document_editor)
+                        },
+                        |document_editor, app| {
+                            app.view_components
+                                .document_editor
+                                .get_or_init(|| document_editor);
+                        },
+                    );
+                }
+            }
         }
         super::MainView::Demo => {
             app.view_components.corpus_tree = OnceLock::new();

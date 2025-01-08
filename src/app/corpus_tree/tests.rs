@@ -154,14 +154,16 @@ fn add_and_delete_entry() {
     // Manually set the values for namespace/name
     {
         let mut app = app_state.write();
-        app.corpus_tree
-            .as_mut()
+        app.view_components
+            .corpus_tree
+            .get_mut()
             .unwrap()
             .data
             .new_entry
             .current_namespace = "test".to_string();
-        app.corpus_tree
-            .as_mut()
+        app.view_components
+            .corpus_tree
+            .get_mut()
             .unwrap()
             .data
             .new_entry
