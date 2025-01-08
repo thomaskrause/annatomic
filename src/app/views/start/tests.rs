@@ -1,6 +1,7 @@
 use crate::{
     app::tests::{
-        create_app_with_corpus, create_test_harness, wait_for_corpus_tree, wait_until_jobs_finished,
+        create_app_with_corpus, create_test_harness, wait_for_corpus_tree,
+        wait_for_corpus_tree_vanished,
     },
     assert_screenshots,
 };
@@ -90,14 +91,12 @@ fn delete_corpus() {
         let mut app_state = app_state.write();
         app_state.project.scheduled_for_deletion = Some("single_sentence".to_string());
     }
-    wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
     let confirmation_result = harness.try_wgpu_snapshot("delete_corpus_confirmation");
 
     harness.get_by_label_contains("Delete").click();
     harness.run();
-    wait_until_jobs_finished(&mut harness, app_state.clone());
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_corpus_tree_vanished(&mut harness, app_state.clone());
     let final_result = harness.try_wgpu_snapshot("delete_corpus");
     assert_screenshots!(confirmation_result, final_result);
     {

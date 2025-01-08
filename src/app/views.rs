@@ -10,15 +10,23 @@ pub(crate) struct LoadedViewComponents {
     pub(crate) document_editor: OnceLock<DocumentEditor>,
 }
 
-pub(crate) fn load_components_for_view(app: &mut AnnatomicApp) {
+pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bool) {
     match app.main_view {
         super::MainView::Start => {
             app.view_components.document_editor = OnceLock::new();
             if let Some(corpus) = &app.project.selected_corpus {
                 let job_title = "Creating corpus tree";
-                if app.view_components.corpus_tree.get().is_none()
-                    && !app.jobs.has_active_job_with_title(&job_title)
-                {
+                let selected_corpus_node = app
+                    .view_components
+                    .corpus_tree
+                    .get()
+                    .and_then(|ct| ct.get_selected_corpus_node());
+
+                let needs_refresh =
+                    force_refresh || app.view_components.corpus_tree.get().is_none();
+                if needs_refresh && !app.jobs.has_active_job_with_title(&job_title) {
+                    app.view_components.corpus_tree = OnceLock::new();
+
                     let corpus_cache = app.project.corpus_cache.clone();
                     let jobs = app.jobs.clone();
                     let notifier = app.notifier.clone();
@@ -27,7 +35,12 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp) {
                         &job_title,
                         move |_| {
                             let graph = corpus_cache.get(&location)?;
-                            let corpus_tree = CorpusTree::create_from_graph(graph, jobs, notifier)?;
+                            let corpus_tree = CorpusTree::create_from_graph(
+                                graph,
+                                selected_corpus_node,
+                                jobs,
+                                notifier,
+                            )?;
                             Ok(corpus_tree)
                         },
                         |corpus_tree, app| {
@@ -45,9 +58,9 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp) {
 
             if let Some(corpus) = &app.project.selected_corpus {
                 let job_title = "Creating document editor";
-                if app.view_components.document_editor.get().is_none()
-                    && !app.jobs.has_active_job_with_title(&job_title)
-                {
+                let needs_refresh =
+                    force_refresh || app.view_components.corpus_tree.get().is_none();
+                if needs_refresh && !app.jobs.has_active_job_with_title(&job_title) {
                     let corpus_cache = app.project.corpus_cache.clone();
                     let location = corpus.location.clone();
                     app.jobs.add(

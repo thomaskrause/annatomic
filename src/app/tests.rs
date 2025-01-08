@@ -54,14 +54,40 @@ pub(crate) fn wait_for_corpus_tree(
     harness: &mut Harness<'static>,
     app_state: Arc<RwLock<crate::AnnatomicApp>>,
 ) {
-    for _ in 0..10_000 {
+    for i in 0..10_000 {
         harness.step();
         let app_state = app_state.read();
-        if app_state.view_components.corpus_tree.get().is_some() {
+        if i > 10
+            && app_state.jobs.has_running_jobs()
+            && app_state.view_components.corpus_tree.get().is_some()
+        {
             break;
         }
     }
-    harness.run();
+
+    for _ in 0..10 {
+        harness.step();
+    }
+}
+
+pub(crate) fn wait_for_corpus_tree_vanished(
+    harness: &mut Harness<'static>,
+    app_state: Arc<RwLock<crate::AnnatomicApp>>,
+) {
+    for i in 0..10_000 {
+        harness.step();
+        let app_state = app_state.read();
+        if i > 10
+            && app_state.jobs.has_running_jobs()
+            && app_state.view_components.corpus_tree.get().is_none()
+        {
+            break;
+        }
+    }
+
+    for _ in 0..10 {
+        harness.step();
+    }
 }
 
 pub(crate) fn wait_until_jobs_finished(

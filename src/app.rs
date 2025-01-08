@@ -167,8 +167,7 @@ impl AnnatomicApp {
     pub(crate) fn change_view(&mut self, new_view: MainView) {
         if self.main_view != new_view {
             self.main_view = new_view;
-            self.view_components = LoadedViewComponents::default();
-            load_components_for_view(self);
+            load_components_for_view(self, true);
         }
     }
 
@@ -208,9 +207,8 @@ impl AnnatomicApp {
     }
 
     pub(crate) fn select_corpus(&mut self, selection: Option<String>) {
-        self.view_components = LoadedViewComponents::default();
         self.project.select_corpus(selection);
-        load_components_for_view(self);
+        load_components_for_view(self, true);
     }
 
     fn apply_pending_updates(&mut self) {
@@ -244,7 +242,6 @@ impl AnnatomicApp {
 
     pub(crate) fn show(&mut self, ctx: &egui::Context, frame_info: &IntegrationInfo) {
         egui_extras::install_image_loaders(ctx);
-        load_components_for_view(self);
 
         // Check if we need to react to a closing event
         if let ShutdownRequest::None = self.shutdown_request {
@@ -383,6 +380,7 @@ impl eframe::App for AnnatomicApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        load_components_for_view(self, false);
         self.show(ctx, frame.info());
     }
 

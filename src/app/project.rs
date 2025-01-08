@@ -17,7 +17,7 @@ use graphannis::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{job_executor::JobExecutor, LoadedViewComponents};
+use super::{job_executor::JobExecutor, load_components_for_view};
 use super::{Notifier, APP_ID};
 
 #[cfg(test)]
@@ -96,12 +96,8 @@ impl Project {
     }
 
     pub(crate) fn delete_corpus(&mut self, corpus_name: String) {
-        // Unselect corpus if necessary
-        if let Some(selection) = &self.selected_corpus {
-            if selection.name == corpus_name {
-                self.select_corpus(None);
-            }
-        }
+        self.scheduled_for_deletion = None;
+
         // Delete the folder where the corpus is stored
         if let Some(location) = self.corpus_locations.remove(&corpus_name) {
             let title = format!(
@@ -114,10 +110,12 @@ impl Project {
                     std::fs::remove_dir_all(location)?;
                     Ok(())
                 },
-                |_result, _app| {},
+                |_result, app| {
+                    app.project.select_corpus(None);
+                    load_components_for_view(app, true);
+                },
             );
         }
-        self.scheduled_for_deletion = None;
     }
 
     pub(super) fn select_corpus(&mut self, selection: Option<String>) {
@@ -241,7 +239,6 @@ impl Project {
                     "Undoing changes",
                     move |j| {
                         j.update_message("Loading old corpus state from disk");
-
                         let lock = corpus_cache.load_from_disk(&new_state.location)?;
                         {
                             let mut graph = lock.write();
@@ -257,7 +254,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.view_components = LoadedViewComponents::default();
+                        load_components_for_view(app, true);
                     },
                 );
             }
@@ -295,7 +292,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.view_components = LoadedViewComponents::default();
+                        load_components_for_view(app, true);
                     },
                 );
             }

@@ -98,7 +98,6 @@ fn undo_redo() {
         let mut app_state = app_state.write();
         app_state.project.undo();
     }
-    wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
 
     assert_eq!(1, query_count("annis:doc=\"zossen-1\"", app_state.clone()));
@@ -111,7 +110,6 @@ fn undo_redo() {
         let mut app_state = app_state.write();
         app_state.project.redo();
     }
-    wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
 
     assert_eq!(1, query_count("annis:doc=\"zossen-2\"", app_state.clone()));
@@ -120,17 +118,6 @@ fn undo_redo() {
     let r4 = harness.try_wgpu_snapshot("undo_redo_4");
 
     assert_screenshots![r1, r2, r3, r4];
-
-    {
-        let app_state = app_state.read();
-
-        let graph = app_state.project.get_selected_graph().unwrap().unwrap();
-        let query = aql::parse("annis:doc=\"zossen-2\"", false).unwrap();
-        let count = aql::execute_query_on_graph(&graph.read(), &query, true, None)
-            .unwrap()
-            .count();
-        assert_eq!(1, count);
-    }
 }
 
 #[test]
@@ -148,7 +135,6 @@ fn add_and_delete_entry() {
     harness.get_by_label("single_sentence/zossen").click();
     harness.run();
 
-    wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
 
     // Manually set the values for namespace/name
@@ -182,7 +168,6 @@ fn add_and_delete_entry() {
 
     harness.get_by_label(PLUS_CIRCLE).click();
 
-    wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
 
     let r1 = harness.try_wgpu_snapshot("after-adding-metadata");
@@ -190,7 +175,6 @@ fn add_and_delete_entry() {
     // Delete the entry again
     let delete_buttons: Vec<_> = harness.get_all_by_label(TRASH).collect();
     delete_buttons[3].click();
-    wait_until_jobs_finished(&mut harness, app_state.clone());
     wait_for_corpus_tree(&mut harness, app_state.clone());
 
     let r2 = harness.try_wgpu_snapshot("after-deleting-metadata");

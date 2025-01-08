@@ -156,7 +156,7 @@ fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
         .view_components
         .corpus_tree
         .get()
-        .and_then(|ct| ct.selected_corpus_node);
+        .and_then(|ct| ct.get_selected_corpus_node());
     if let Some(node_id) = selected_node_id {
         if ui.link("Open selected in editor").clicked() {
             app.change_view(MainView::EditDocument { node_id });

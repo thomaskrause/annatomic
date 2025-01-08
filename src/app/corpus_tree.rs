@@ -47,7 +47,7 @@ struct Data {
 }
 
 pub(crate) struct CorpusTree {
-    pub(crate) selected_corpus_node: Option<NodeID>,
+    selected_corpus_node: Option<NodeID>,
     data: Data,
     gs: Box<dyn WriteableGraphStorage>,
     graph: Arc<RwLock<AnnotationGraph>>,
@@ -67,6 +67,7 @@ impl Debug for CorpusTree {
 impl CorpusTree {
     pub fn create_from_graph(
         graph: Arc<RwLock<AnnotationGraph>>,
+        selected_corpus_node: Option<NodeID>,
         jobs: JobExecutor,
         notifier: Notifier,
     ) -> anyhow::Result<Self> {
@@ -100,14 +101,22 @@ impl CorpusTree {
             inverted_corpus_graph.calculate_statistics()?;
         }
 
-        Ok(Self {
-            selected_corpus_node: None,
+        let mut result = Self {
+            selected_corpus_node,
             data: Data::default(),
             gs: Box::new(inverted_corpus_graph),
             jobs,
             notifier,
             graph,
-        })
+        };
+
+        result.update_data_after_selection();
+
+        Ok(result)
+    }
+
+    pub(crate) fn get_selected_corpus_node(&self) -> Option<NodeID> {
+        self.selected_corpus_node
     }
 
     fn show_structure(&mut self, ui: &mut Ui) {
@@ -409,8 +418,7 @@ impl CorpusTree {
         });
     }
 
-    pub(crate) fn select_corpus_node(&mut self, selection: Option<NodeID>) {
-        self.selected_corpus_node = selection;
+    fn update_data_after_selection(&mut self) {
         if let Some(parent) = self.selected_corpus_node {
             self.data.node_annos.clear();
             self.data.changed_keys.clear();
@@ -449,6 +457,11 @@ impl CorpusTree {
             self.data.parent_node_name = parent_node_name.to_string();
             self.data.node_annos.sort();
         }
+    }
+
+    fn select_corpus_node(&mut self, selection: Option<NodeID>) {
+        self.selected_corpus_node = selection;
+        self.update_data_after_selection();
     }
 
     fn recursive_corpus_structure(&mut self, ui: &mut Ui, parent: NodeID, level: usize) {
