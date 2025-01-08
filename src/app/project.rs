@@ -180,7 +180,6 @@ impl Project {
                         app.project.undoer.add_undo(selected_corpus);
                     }
                     app.project.updates_pending = false;
-                    app.view_components = LoadedViewComponents::default();
                 },
             );
         }
