@@ -7,7 +7,7 @@ use graphannis::{
 };
 use graphannis_core::graph::NODE_NAME_KEY;
 
-use crate::util::token_helper::{TokenHelper, TOKEN_KEY};
+use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
 
 struct Token {
     labels: BTreeMap<AnnoKey, String>,

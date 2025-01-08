@@ -8,6 +8,8 @@ use graphannis::model::AnnotationComponentType;
 
 use rfd::FileDialog;
 
+use super::LoadedViewComponents;
+
 #[cfg(test)]
 mod tests;
 
@@ -49,10 +51,10 @@ fn corpus_selection(ui: &mut Ui, app: &mut AnnatomicApp, corpora: &[String]) -> 
                     app.apply_pending_updates();
                     if is_selected {
                         // Unselect the current corpus
-                        app.project.select_corpus(None);
+                        app.select_corpus(None);
                     } else {
                         // Select this corpus
-                        app.project.select_corpus(Some(c.clone()));
+                        app.select_corpus(Some(c.clone()));
                     }
                 }
             }
@@ -99,7 +101,7 @@ fn import_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                     },
                     |(name, location), app| {
                         app.project.corpus_locations.insert(name.clone(), location);
-                        app.project.select_corpus(Some(name));
+                        app.select_corpus(Some(name));
                     },
                 );
             }
@@ -143,7 +145,7 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
                     "Corpus \"{}\" added",
                     &app.new_corpus_name
                 )));
-                app.project.select_corpus(Some(app.new_corpus_name.clone()));
+                app.select_corpus(Some(app.new_corpus_name.clone()));
                 app.new_corpus_name = String::new();
                 ui.memory_mut(|mem| mem.surrender_focus(edit_id));
             }
@@ -152,14 +154,17 @@ fn create_new_corpus(ui: &mut Ui, app: &mut AnnatomicApp) {
 }
 
 fn corpus_structure(ui: &mut Ui, app: &mut AnnatomicApp) {
-    if let Some(corpus_tree) = &mut app.corpus_tree {
-        if let Some(node_id) = &corpus_tree.selected_corpus_node {
-            let node_id = *node_id;
-            if ui.link("Open selected in editor").clicked() {
-                app.main_view = MainView::EditDocument { node_id };
-                app.project.update_editor_content(app.main_view.clone());
-            }
+    let selected_node_id = app
+        .view_components
+        .corpus_tree
+        .get()
+        .and_then(|ct| ct.selected_corpus_node);
+    if let Some(node_id) = selected_node_id {
+        if ui.link("Open selected in editor").clicked() {
+            app.change_view(MainView::EditDocument { node_id });
         }
+    }
+    if let Some(corpus_tree) = app.view_components.corpus_tree.get_mut() {
         corpus_tree.show(ui);
     } else {
         ui.label("Select a corpus to edit it.");

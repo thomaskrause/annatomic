@@ -140,7 +140,7 @@ mod tests {
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
 
-    use crate::util::example_generator;
+    use crate::app::util::example_generator;
 
     use super::TokenHelper;
 

@@ -8,7 +8,7 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
         app.main_view = MainView::Start;
     }
 
-    if let Some(document_editor) = &mut app.document_editor {
+    if let Some(document_editor) = app.view_components.document_editor.get_mut() {
         document_editor.show(ui);
     }
     Ok(())

@@ -7,10 +7,7 @@ use anyhow::Result;
 use egui::mutex::RwLock;
 use graphannis::AnnotationGraph;
 
-use super::Corpus;
-
 struct InnerCorpusCache {
-    name: String,
     location: PathBuf,
     graph: Arc<RwLock<AnnotationGraph>>,
 }
@@ -20,27 +17,30 @@ pub(crate) struct CorpusCache {
 }
 
 impl CorpusCache {
-    pub(crate) fn get(&self, corpus: &Corpus) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
+    pub(crate) fn get(&self, location: &Path) -> Result<Arc<RwLock<AnnotationGraph>>> {
         {
             let mut inner = self.inner.write();
 
             // Check if a cached version exist
             if let Some(existing) = inner.as_mut() {
-                if existing.name == corpus.name && existing.location == corpus.location {
-                    return Ok(Some(existing.graph.clone()));
+                if existing.location == location {
+                    return Ok(existing.graph.clone());
+                } else {
+                    // Drop the annotation graph in background thread, so we can return faster
+                    let old_graph = inner.take();
+                    std::thread::spawn(move || std::mem::drop(old_graph));
                 }
             }
         }
 
         // Load and return the graph
-        self.load_from_disk(&corpus.name, &corpus.location)
+        self.load_from_disk(location)
     }
 
     pub(crate) fn load_from_disk(
         &self,
-        corpus_name: &str,
         corpus_location: &Path,
-    ) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
+    ) -> Result<Arc<RwLock<AnnotationGraph>>> {
         let mut inner = self.inner.write();
 
         // Load and return the graph
@@ -52,8 +52,7 @@ impl CorpusCache {
         *inner = Some(InnerCorpusCache {
             graph: graph.clone(),
             location: corpus_location.to_path_buf(),
-            name: corpus_name.to_string(),
         });
-        Ok(Some(graph))
+        Ok(graph)
     }
 }

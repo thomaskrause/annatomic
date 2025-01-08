@@ -8,9 +8,7 @@ use std::{
 use anyhow::{Context, Ok, Result};
 use cache::CorpusCache;
 
-#[cfg(test)]
 use egui::mutex::RwLock;
-#[cfg(test)]
 use std::sync::Arc;
 
 use egui::util::undoer::{self, Undoer};
@@ -23,7 +21,7 @@ use graphannis::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{job_executor::JobExecutor, DocumentEditor, MainView};
+use super::{job_executor::JobExecutor, DocumentEditor, LoadedViewComponents, MainView};
 use super::{CorpusTree, Notifier, APP_ID};
 
 mod cache;
@@ -33,7 +31,7 @@ mod tests;
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub(crate) struct Corpus {
     pub(crate) name: String,
-    location: PathBuf,
+    pub(crate) location: PathBuf,
     diff_to_last_save: Vec<UpdateEvent>,
 }
 
@@ -58,7 +56,7 @@ pub(crate) struct Project {
     pub(crate) scheduled_for_deletion: Option<String>,
     pub(crate) corpus_locations: BTreeMap<String, PathBuf>,
     #[serde(skip)]
-    corpus_cache: CorpusCache,
+    pub(super) corpus_cache: CorpusCache,
     #[serde(skip)]
     notifier: Notifier,
     #[serde(skip)]
@@ -121,7 +119,7 @@ impl Project {
         self.scheduled_for_deletion = None;
     }
 
-    pub(crate) fn select_corpus(&mut self, selection: Option<String>) {
+    pub(super) fn select_corpus(&mut self, selection: Option<String>) {
         // Do nothing if the corpus is already selected
         if let Some(selected_corpus) = &self.selected_corpus {
             if Some(&selected_corpus.name) == selection.as_ref() {
@@ -141,8 +139,6 @@ impl Project {
                     .add_toast(Toast::error(format!("Missing location for corpus {name}")));
             }
         }
-
-        self.update_corpus_structure_job();
     }
 
     pub(crate) fn new_empty_corpus(&mut self, name: &str) -> Result<()> {
@@ -168,13 +164,12 @@ impl Project {
                         added_events.push(event.1);
                     }
                     job.update_message("Loading corpus if necessary");
-                    if let Some(graph) = corpus_cache.get(&selected_corpus)? {
-                        job.update_message("Applying updates");
-                        let mut graph = graph.write();
-                        graph.apply_update_keep_statistics(&mut update, |msg| {
-                            job.update_message(format!("Applying updates: {msg}"))
-                        })?;
-                    }
+                    let graph = corpus_cache.get(&selected_corpus.location)?;
+                    job.update_message("Applying updates");
+                    let mut graph = graph.write();
+                    graph.apply_update_keep_statistics(&mut update, |msg| {
+                        job.update_message(format!("Applying updates: {msg}"))
+                    })?;
 
                     Ok(added_events)
                 },
@@ -184,7 +179,7 @@ impl Project {
                         app.project.undoer.add_undo(selected_corpus);
                     }
                     app.project.updates_pending = false;
-                    app.project.update_corpus_structure_job();
+                    app.view_components = LoadedViewComponents::default();
                 },
             );
         }
@@ -194,11 +189,10 @@ impl Project {
         if let Some(selected_corpus) = self.selected_corpus.clone() {
             self.updates_pending = true;
             let corpus_cache = self.corpus_cache.clone();
-            if let Some(graph) = corpus_cache.get(&selected_corpus)? {
-                let mut graph = graph.write();
-                graph.persist_to(&selected_corpus.location)?;
-                self.undoer = default_undoer();
-            }
+            let graph = corpus_cache.get(&selected_corpus.location)?;
+            let mut graph = graph.write();
+            graph.persist_to(&selected_corpus.location)?;
+            self.undoer = default_undoer();
         }
         Ok(())
     }
@@ -211,19 +205,18 @@ impl Project {
             self.jobs.add(
                 &job_title,
                 move |job| {
-                    if let Some(graph) = corpus_cache.get(&selected_corpus)? {
-                        let outfile = File::create(location)?;
-                        let buffered_writer = BufWriter::new(outfile);
-                        let graph = graph.read();
-                        graphannis_core::graph::serialization::graphml::export_stable_order(
-                            &graph,
-                            None,
-                            buffered_writer,
-                            |msg| {
-                                job.update_message(msg);
-                            },
-                        )?;
-                    }
+                    let graph = corpus_cache.get(&selected_corpus.location)?;
+                    let outfile = File::create(location)?;
+                    let buffered_writer = BufWriter::new(outfile);
+                    let graph = graph.read();
+                    graphannis_core::graph::serialization::graphml::export_stable_order(
+                        &graph,
+                        None,
+                        buffered_writer,
+                        |msg| {
+                            job.update_message(msg);
+                        },
+                    )?;
 
                     Ok(())
                 },
@@ -249,9 +242,7 @@ impl Project {
                     move |j| {
                         j.update_message("Loading old corpus state from disk");
 
-                        let lock = corpus_cache
-                            .load_from_disk(&new_state.name, &new_state.location)?
-                            .context("Graph not found on disk")?;
+                        let lock = corpus_cache.load_from_disk(&new_state.location)?;
                         {
                             let mut graph = lock.write();
                             j.update_message("Applying updates");
@@ -266,7 +257,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.project.update_corpus_structure_job();
+                        app.view_components = LoadedViewComponents::default();
                     },
                 );
             }
@@ -289,9 +280,7 @@ impl Project {
                     "Redoing changes",
                     move |j| {
                         j.update_message("Loading old corpus state from disk");
-                        let lock = corpus_cache
-                            .load_from_disk(&new_state.name, &new_state.location)?
-                            .context("Graph not found on disk")?;
+                        let lock = corpus_cache.load_from_disk(&new_state.location)?;
                         {
                             let mut graph = lock.write();
                             j.update_message("Applying updates");
@@ -306,7 +295,7 @@ impl Project {
                         Ok(lock)
                     },
                     |_, app| {
-                        app.project.update_corpus_structure_job();
+                        app.view_components = LoadedViewComponents::default();
                     },
                 );
             }
@@ -314,22 +303,12 @@ impl Project {
     }
 
     /// Rebuild the state that is not persisted but calculated
-    pub(crate) fn load_after_init(
-        &mut self,
-        notifier: Notifier,
-        jobs: JobExecutor,
-        main_view: MainView,
-    ) -> Result<()> {
+    pub(crate) fn load_after_init(&mut self, notifier: Notifier, jobs: JobExecutor) -> Result<()> {
         self.notifier = notifier;
         self.jobs = jobs;
         if let Some(selection) = &mut self.selected_corpus {
             selection.diff_to_last_save.clear();
             self.undoer.add_undo(selection);
-        }
-        match main_view {
-            MainView::Start => self.update_corpus_structure_job(),
-            MainView::EditDocument { node_id } => self.update_document_editor_job(node_id),
-            MainView::Demo => {}
         }
         Ok(())
     }
@@ -337,92 +316,10 @@ impl Project {
     #[cfg(test)]
     pub(crate) fn get_selected_graph(&self) -> Result<Option<Arc<RwLock<AnnotationGraph>>>> {
         if let Some(corpus) = &self.selected_corpus {
-            let graph = self.corpus_cache.get(&corpus)?;
-            Ok(graph)
+            let graph = self.corpus_cache.get(&corpus.location)?;
+            Ok(Some(graph))
         } else {
             Ok(None)
         }
-    }
-
-    fn update_corpus_structure_job(&mut self) {
-        let corpus_cache = self.corpus_cache.clone();
-        let selected_corpus = self.selected_corpus.clone();
-        let jobs_for_closure = self.jobs.clone();
-        let notifier = self.notifier.clone();
-        self.jobs.add(
-            "Updating corpus selection",
-            move |job| {
-                if let Some(selected_corpus) = &selected_corpus {
-                    job.update_message("Loading corpus from disk");
-                    let graph = corpus_cache.get(selected_corpus)?;
-
-                    if let Some(graph) = graph {
-                        job.update_message("Updating corpus structure");
-                        let corpus_tree = CorpusTree::create_from_graph(
-                            graph.clone(),
-                            jobs_for_closure,
-                            notifier,
-                        )?;
-                        return Ok((Some(graph), Some(corpus_tree)));
-                    }
-                }
-                Ok((None, None))
-            },
-            move |(graph, corpus_tree), app| {
-                // Drop any old corpus tree and graph in a background thread.
-                // The corpus tree can hold references to the annotation graph and occupy large amounts of memory, so dropping the memory in a background thread and don't block the UI
-                let old_graph = app.graph.take();
-                let old_corpus_tree = app.corpus_tree.take();
-                let old_selection = old_corpus_tree
-                    .as_ref()
-                    .and_then(|ct| ct.selected_corpus_node);
-                rayon::spawn(move || {
-                    std::mem::drop(old_graph);
-                    std::mem::drop(old_corpus_tree);
-                });
-
-                if let Some(graph) = graph {
-                    app.graph = Some(graph);
-                }
-                if let Some(mut corpus_tree) = corpus_tree {
-                    corpus_tree.select_corpus_node(old_selection);
-                    app.corpus_tree = Some(corpus_tree);
-                }
-            },
-        );
-    }
-
-    /// Starts a job that updates the content of the current editor
-    pub(crate) fn update_editor_content(&mut self, main_view: MainView) {
-        match main_view {
-            MainView::Start => {
-                self.update_corpus_structure_job();
-            }
-            MainView::EditDocument { node_id } => {
-                self.update_document_editor_job(node_id);
-            }
-            MainView::Demo => {}
-        }
-    }
-
-    fn update_document_editor_job(&mut self, selected_node: NodeID) {
-        let corpus_cache = self.corpus_cache.clone();
-        let selected_corpus = self.selected_corpus.clone();
-
-        self.jobs.add(
-            "Load document for editor",
-            move |_| {
-                if let Some(selected_corpus) = &selected_corpus {
-                    if let Some(graph) = corpus_cache.get(selected_corpus)? {
-                        let editor = DocumentEditor::create_from_graph(selected_node, graph)?;
-                        return Ok(Some(editor));
-                    }
-                }
-                Ok(None)
-            },
-            |editor, app| {
-                app.document_editor = editor;
-            },
-        );
     }
 }

@@ -5,22 +5,22 @@ use clap::Parser;
 use corpus_tree::CorpusTree;
 use editors::DocumentEditor;
 use eframe::IntegrationInfo;
-use egui::{
-    mutex::RwLock, Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme,
-};
-use graphannis::{graph::NodeID, AnnotationGraph};
+use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme};
+use graphannis::graph::NodeID;
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
 use serde::{Deserialize, Serialize};
+use views::{load_components_for_view, LoadedViewComponents};
 
 mod corpus_tree;
 mod editors;
-mod job_executor;
+pub(crate) mod job_executor;
 mod messages;
 mod project;
 #[cfg(test)]
 mod tests;
+pub(crate) mod util;
 mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
@@ -33,7 +33,7 @@ pub const CHANGE_PENDING_COLOR_DARK: Color32 = Color32::from_rgb(160, 50, 50);
 pub const CHANGE_PENDING_COLOR_LIGHT: Color32 = Color32::from_rgb(255, 128, 128);
 
 /// Which main view to show in the app
-#[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
+#[derive(Default, serde::Deserialize, serde::Serialize, Clone, PartialEq)]
 pub(crate) enum MainView {
     #[default]
     Start,
@@ -65,11 +65,7 @@ pub struct AnnatomicApp {
     new_corpus_name: String,
     project: Project,
     #[serde(skip)]
-    pub(crate) graph: Option<Arc<RwLock<AnnotationGraph>>>,
-    #[serde(skip)]
-    pub(crate) document_editor: Option<DocumentEditor>,
-    #[serde(skip)]
-    pub(crate) corpus_tree: Option<CorpusTree>,
+    view_components: LoadedViewComponents,
     #[serde(skip)]
     shutdown_request: ShutdownRequest,
     #[serde(skip)]
@@ -93,9 +89,7 @@ impl Default for AnnatomicApp {
             jobs,
             notifier,
             args: AnnatomicArgs::default(),
-            graph: None,
-            corpus_tree: None,
-            document_editor: None,
+            view_components: LoadedViewComponents::default(),
             shutdown_request: ShutdownRequest::None,
         }
     }
@@ -120,11 +114,8 @@ impl AnnatomicApp {
         // Set fonts once
         app.set_fonts(&cc.egui_ctx);
         // Rebuild the state that is not persisted but calculated
-        app.project.load_after_init(
-            app.notifier.clone(),
-            app.jobs.clone(),
-            app.main_view.clone(),
-        )?;
+        app.project
+            .load_after_init(app.notifier.clone(), app.jobs.clone())?;
         Ok(app)
     }
 
@@ -173,6 +164,14 @@ impl AnnatomicApp {
         ctx.set_fonts(defs);
     }
 
+    pub(crate) fn change_view(&mut self, new_view: MainView) {
+        if self.main_view != new_view {
+            self.main_view = new_view;
+            self.view_components = LoadedViewComponents::default();
+            load_components_for_view(self);
+        }
+    }
+
     fn handle_corpus_confirmation_dialog(&mut self, ctx: &egui::Context) {
         if self.project.scheduled_for_deletion.is_some() {
             egui::Modal::new("corpus_deletion_confirmation".into()).show(ctx, |ui| {
@@ -208,14 +207,20 @@ impl AnnatomicApp {
         }
     }
 
+    pub(crate) fn select_corpus(&mut self, selection: Option<String>) {
+        self.view_components = LoadedViewComponents::default();
+        self.project.select_corpus(selection);
+        load_components_for_view(self);
+    }
+
     fn apply_pending_updates(&mut self) {
-        if let Some(ct) = self.corpus_tree.as_mut() {
+        if let Some(ct) = self.view_components.corpus_tree.get_mut() {
             ct.apply_pending_updates();
         }
     }
 
     fn has_pending_updates(&self) -> bool {
-        if let Some(ct) = &self.corpus_tree {
+        if let Some(ct) = self.view_components.corpus_tree.get() {
             ct.has_pending_updates()
         } else {
             false
@@ -239,6 +244,7 @@ impl AnnatomicApp {
 
     pub(crate) fn show(&mut self, ctx: &egui::Context, frame_info: &IntegrationInfo) {
         egui_extras::install_image_loaders(ctx);
+        load_components_for_view(self);
 
         // Check if we need to react to a closing event
         if let ShutdownRequest::None = self.shutdown_request {

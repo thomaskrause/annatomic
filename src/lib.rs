@@ -2,4 +2,3 @@
 
 mod app;
 pub use app::{AnnatomicApp, AnnatomicArgs};
-pub(crate) mod util;
