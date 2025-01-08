@@ -11,7 +11,7 @@ use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
 use serde::{Deserialize, Serialize};
-use views::{load_components_for_view, LoadedViewComponents};
+use views::{load_components_for_view, Editor, LoadedViewComponents};
 
 mod corpus_tree;
 mod editors;

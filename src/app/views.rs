@@ -1,3 +1,5 @@
+use egui::Ui;
+
 use super::{AnnatomicApp, CorpusTree, DocumentEditor};
 use std::sync::OnceLock;
 pub(crate) mod demo;
@@ -8,6 +10,12 @@ pub(crate) mod start;
 pub(crate) struct LoadedViewComponents {
     pub(crate) corpus_tree: OnceLock<CorpusTree>,
     pub(crate) document_editor: OnceLock<DocumentEditor>,
+}
+
+pub(crate) trait Editor {
+    fn show(&mut self, ui: &mut Ui);
+    fn has_pending_updates(&self) -> bool;
+    fn apply_pending_updates(&mut self);
 }
 
 pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bool) {
@@ -24,7 +32,7 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bo
 
                 let needs_refresh =
                     force_refresh || app.view_components.corpus_tree.get().is_none();
-                if needs_refresh && !app.jobs.has_active_job_with_title(&job_title) {
+                if needs_refresh && !app.jobs.has_active_job_with_title(job_title) {
                     app.view_components.corpus_tree = OnceLock::new();
 
                     let corpus_cache = app.project.corpus_cache.clone();
@@ -32,7 +40,7 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bo
                     let notifier = app.notifier.clone();
                     let location = corpus.location.clone();
                     app.jobs.add(
-                        &job_title,
+                        job_title,
                         move |_| {
                             let graph = corpus_cache.get(&location)?;
                             let corpus_tree = CorpusTree::create_from_graph(
@@ -60,11 +68,11 @@ pub(crate) fn load_components_for_view(app: &mut AnnatomicApp, force_refresh: bo
                 let job_title = "Creating document editor";
                 let needs_refresh =
                     force_refresh || app.view_components.corpus_tree.get().is_none();
-                if needs_refresh && !app.jobs.has_active_job_with_title(&job_title) {
+                if needs_refresh && !app.jobs.has_active_job_with_title(job_title) {
                     let corpus_cache = app.project.corpus_cache.clone();
                     let location = corpus.location.clone();
                     app.jobs.add(
-                        &job_title,
+                        job_title,
                         move |_| {
                             let graph = corpus_cache.get(&location)?;
                             let document_editor =

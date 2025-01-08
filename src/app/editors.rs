@@ -9,6 +9,8 @@ use graphannis_core::graph::NODE_NAME_KEY;
 
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
 
+use super::views::Editor;
+
 struct Token {
     labels: BTreeMap<AnnoKey, String>,
 }
@@ -52,12 +54,20 @@ impl DocumentEditor {
         }
         Ok(Self { token })
     }
+}
 
-    pub(crate) fn show(&mut self, ui: &mut Ui) {
+impl Editor for DocumentEditor {
+    fn show(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             for t in &self.token {
                 ui.label(t.value());
             }
         });
     }
+
+    fn has_pending_updates(&self) -> bool {
+        false
+    }
+
+    fn apply_pending_updates(&mut self) {}
 }

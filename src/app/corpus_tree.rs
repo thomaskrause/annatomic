@@ -22,7 +22,8 @@ use graphannis_core::{
 };
 
 use super::{
-    job_executor::JobExecutor, Notifier, CHANGE_PENDING_COLOR_DARK, CHANGE_PENDING_COLOR_LIGHT,
+    job_executor::JobExecutor, views::Editor, Notifier, CHANGE_PENDING_COLOR_DARK,
+    CHANGE_PENDING_COLOR_LIGHT,
 };
 
 #[cfg(test)]
@@ -349,74 +350,6 @@ impl CorpusTree {
             self.apply_pending_updates();
         }
     }
-    pub(crate) fn has_pending_updates(&self) -> bool {
-        !self.data.changed_keys.is_empty()
-    }
-
-    pub(crate) fn apply_pending_updates(&mut self) {
-        if self.has_pending_updates() {
-            // apply all changes as updates to our internal corpus graph
-            let parent_node_name = self.data.parent_node_name.clone();
-            let node_annos = self.data.node_annos.clone();
-            let mut changed_keys = self.data.changed_keys.clone();
-            self.jobs.add(
-                "Applying pending metadata updates",
-                move |_| {
-                    let mut update = GraphUpdate::new();
-
-                    for entry in node_annos.iter() {
-                        let entry_key = AnnoKey {
-                            ns: entry.original_namespace.clone().into(),
-                            name: entry.original_name.clone().into(),
-                        };
-                        if changed_keys.contains(&entry_key) {
-                            update.add_event(DeleteNodeLabel {
-                                node_name: parent_node_name.clone(),
-                                anno_ns: entry.original_namespace.clone(),
-                                anno_name: entry.original_name.clone(),
-                            })?;
-                            update.add_event(AddNodeLabel {
-                                node_name: parent_node_name.clone(),
-                                anno_ns: entry.current_namespace.clone(),
-                                anno_name: entry.current_name.clone(),
-                                anno_value: entry.current_value.clone(),
-                            })?;
-                            changed_keys.remove(&entry_key);
-                        }
-                    }
-
-                    // If there are any keys left that have not been used, these entries should be deleted
-                    for entry_key in changed_keys.into_iter() {
-                        update.add_event(DeleteNodeLabel {
-                            node_name: parent_node_name.clone(),
-                            anno_ns: entry_key.ns.to_string(),
-                            anno_name: entry_key.name.to_string(),
-                        })?;
-                    }
-
-                    Ok(update)
-                },
-                |update, app| {
-                    app.project.add_changeset(update);
-                },
-            );
-            self.data.node_annos.sort();
-            self.data.changed_keys.clear();
-        }
-    }
-
-    pub(crate) fn show(&mut self, ui: &mut Ui) {
-        ui.group(|ui| {
-            ui.heading("Corpus editor");
-
-            ui.columns_const(|[c1, c2]| {
-                c1.push_id("corpus_structure", |ui| {
-                    self.show_structure(ui);
-                });
-                c2.push_id("meta_editor", |ui| self.show_meta_editor(ui));
-            });
-        });
-    }
 
     fn update_data_after_selection(&mut self) {
         if let Some(parent) = self.selected_corpus_node {
@@ -511,6 +444,77 @@ impl CorpusTree {
             }
         } else {
             self.notifier.add_toast(Toast::error("Node name not found"));
+        }
+    }
+}
+
+impl Editor for CorpusTree {
+    fn show(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.heading("Corpus editor");
+
+            ui.columns_const(|[c1, c2]| {
+                c1.push_id("corpus_structure", |ui| {
+                    self.show_structure(ui);
+                });
+                c2.push_id("meta_editor", |ui| self.show_meta_editor(ui));
+            });
+        });
+    }
+
+    fn has_pending_updates(&self) -> bool {
+        !self.data.changed_keys.is_empty()
+    }
+
+    fn apply_pending_updates(&mut self) {
+        if self.has_pending_updates() {
+            // apply all changes as updates to our internal corpus graph
+            let parent_node_name = self.data.parent_node_name.clone();
+            let node_annos = self.data.node_annos.clone();
+            let mut changed_keys = self.data.changed_keys.clone();
+            self.jobs.add(
+                "Applying pending metadata updates",
+                move |_| {
+                    let mut update = GraphUpdate::new();
+
+                    for entry in node_annos.iter() {
+                        let entry_key = AnnoKey {
+                            ns: entry.original_namespace.clone().into(),
+                            name: entry.original_name.clone().into(),
+                        };
+                        if changed_keys.contains(&entry_key) {
+                            update.add_event(DeleteNodeLabel {
+                                node_name: parent_node_name.clone(),
+                                anno_ns: entry.original_namespace.clone(),
+                                anno_name: entry.original_name.clone(),
+                            })?;
+                            update.add_event(AddNodeLabel {
+                                node_name: parent_node_name.clone(),
+                                anno_ns: entry.current_namespace.clone(),
+                                anno_name: entry.current_name.clone(),
+                                anno_value: entry.current_value.clone(),
+                            })?;
+                            changed_keys.remove(&entry_key);
+                        }
+                    }
+
+                    // If there are any keys left that have not been used, these entries should be deleted
+                    for entry_key in changed_keys.into_iter() {
+                        update.add_event(DeleteNodeLabel {
+                            node_name: parent_node_name.clone(),
+                            anno_ns: entry_key.ns.to_string(),
+                            anno_name: entry_key.name.to_string(),
+                        })?;
+                    }
+
+                    Ok(update)
+                },
+                |update, app| {
+                    app.project.add_changeset(update);
+                },
+            );
+            self.data.node_annos.sort();
+            self.data.changed_keys.clear();
         }
     }
 }

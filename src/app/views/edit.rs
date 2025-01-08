@@ -3,6 +3,8 @@ use egui::Ui;
 
 use crate::{app::MainView, AnnatomicApp};
 
+use super::Editor;
+
 pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     if ui.link("Go back to main view").clicked() {
         app.main_view = MainView::Start;
