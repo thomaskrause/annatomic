@@ -103,6 +103,11 @@ impl JobExecutor {
         has_jobs
     }
 
+    pub(crate) fn has_active_job_with_title(&self, title: &str) -> bool {
+        let running_jobs = self.running.read();
+        running_jobs.contains_key(title)
+    }
+
     #[cfg(test)]
     pub(crate) fn has_running_jobs(&self) -> bool {
         let running_jobs = self.running.read();

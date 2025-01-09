@@ -1,13 +1,14 @@
+use std::{collections::VecDeque, sync::Arc};
+
 use anyhow::Error;
-use crossbeam_queue::SegQueue;
 use egui::{mutex::RwLock, Context};
 use egui_notify::{Toast, Toasts};
 use log::error;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Notifier {
-    toasts: RwLock<Toasts>,
-    error_queue: SegQueue<Error>,
+    toasts: Arc<RwLock<Toasts>>,
+    error_queue: Arc<RwLock<VecDeque<Error>>>,
 }
 
 impl Notifier {
@@ -17,7 +18,8 @@ impl Notifier {
         } else {
             error!("{err}");
         }
-        self.error_queue.push(err);
+        let mut error_queue = self.error_queue.write();
+        error_queue.push_back(err);
     }
 
     pub(crate) fn report_result<T>(&self, result: anyhow::Result<T>) {
@@ -45,7 +47,8 @@ impl Notifier {
     }
     pub(super) fn show(&self, ctx: &Context) {
         let mut messages = self.toasts.write();
-        while let Some(e) = self.error_queue.pop() {
+        let mut error_queue = self.error_queue.write();
+        while let Some(e) = error_queue.pop_front() {
             let error_msg = if e.chain().len() > 1 {
                 format!("{e}: {}", e.root_cause())
             } else {

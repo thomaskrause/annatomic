@@ -1,11 +1,13 @@
 use std::{io::Read, path::PathBuf};
 
-use egui::{mutex::RwLock, Context};
-use egui_kittest::Harness;
+use egui::{mutex::RwLock, Context, Id};
+use egui_kittest::{kittest::Queryable, Harness};
 use graphannis::model::AnnotationComponentType;
 use tempfile::TempDir;
 
 use super::*;
+
+const MAX_WAIT_STEPS: usize = 10_000;
 
 pub(crate) fn create_app_with_corpus<R: Read, S: Into<String>>(
     corpus_name: S,
@@ -50,25 +52,56 @@ pub(crate) fn create_test_harness(
     (harness, result_app_state.clone())
 }
 
-pub(crate) fn wait_for_corpus_tree(
+pub(crate) fn wait_for_editor(
     harness: &mut Harness<'static>,
     app_state: Arc<RwLock<crate::AnnatomicApp>>,
 ) {
-    for _ in 0..10_000 {
+    for i in 0..MAX_WAIT_STEPS {
         harness.step();
         let app_state = app_state.read();
-        if app_state.corpus_tree.is_some() {
+        if i > 10 && app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_some() {
             break;
         }
     }
-    harness.run();
+
+    for _ in 0..10 {
+        harness.step();
+    }
+}
+
+pub(crate) fn focus_and_wait(harness: &mut Harness<'static>, id: Id) {
+    harness.get_by(|n| n.id().0 == id.value()).focus();
+    for i in 0..MAX_WAIT_STEPS {
+        harness.step();
+        if i > 3 && harness.get_by(|n| n.id().0 == id.value()).is_focused() {
+            break;
+        }
+    }
+    harness.step();
+}
+
+pub(crate) fn wait_for_editor_vanished(
+    harness: &mut Harness<'static>,
+    app_state: Arc<RwLock<crate::AnnatomicApp>>,
+) {
+    for i in 0..MAX_WAIT_STEPS {
+        harness.step();
+        let app_state = app_state.read();
+        if i > 10 && app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_none() {
+            break;
+        }
+    }
+
+    for _ in 0..10 {
+        harness.step();
+    }
 }
 
 pub(crate) fn wait_until_jobs_finished(
     harness: &mut Harness<'static>,
     app_state: Arc<RwLock<crate::AnnatomicApp>>,
 ) {
-    for i in 0..10_000 {
+    for i in 0..MAX_WAIT_STEPS {
         harness.step();
         let app_state = app_state.read();
         if i > 10 && !app_state.jobs.has_running_jobs() {

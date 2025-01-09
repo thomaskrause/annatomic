@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::{
     app::tests::{
-        create_app_with_corpus, create_test_harness, wait_for_corpus_tree, wait_until_jobs_finished,
+        create_app_with_corpus, create_test_harness, focus_and_wait, wait_for_editor,
+        wait_until_jobs_finished,
     },
     assert_screenshots,
 };
@@ -25,7 +26,7 @@ fn show_metadata() {
 
     // Select the corpus and the document
     harness.get_by_label("single_sentence").click();
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
     harness.get_by_label("single_sentence/zossen").click();
 
     harness.run();
@@ -42,7 +43,7 @@ fn save_pending_changes_action(
         app_state.apply_pending_updates();
     }
     wait_until_jobs_finished(harness, app_state.clone());
-    wait_for_corpus_tree(harness, app_state);
+    wait_for_editor(harness, app_state);
 }
 
 fn query_count(query: &str, app_state: Arc<RwLock<crate::AnnatomicApp>>) -> usize {
@@ -68,7 +69,7 @@ fn undo_redo() {
 
     // Select the corpus and the document
     harness.get_by_label("single_sentence").click();
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
     harness.get_by_label("single_sentence/zossen").click();
     harness.run();
 
@@ -96,11 +97,9 @@ fn undo_redo() {
     // Undo last change
     {
         let mut app_state = app_state.write();
-        let mut jobs = app_state.jobs.clone();
-        app_state.project.undo(&mut jobs);
+        app_state.project.undo();
     }
-    wait_until_jobs_finished(&mut harness, app_state.clone());
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
 
     assert_eq!(1, query_count("annis:doc=\"zossen-1\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen-2\"", app_state.clone()));
@@ -110,11 +109,9 @@ fn undo_redo() {
     // Redo, so the name should be "zossen-2" again
     {
         let mut app_state = app_state.write();
-        let mut jobs = app_state.jobs.clone();
-        app_state.project.redo(&mut jobs);
+        app_state.project.redo();
     }
-    wait_until_jobs_finished(&mut harness, app_state.clone());
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
 
     assert_eq!(1, query_count("annis:doc=\"zossen-2\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen-1\"", app_state.clone()));
@@ -122,17 +119,6 @@ fn undo_redo() {
     let r4 = harness.try_wgpu_snapshot("undo_redo_4");
 
     assert_screenshots![r1, r2, r3, r4];
-
-    {
-        let app_state = app_state.read();
-
-        let graph = app_state.project.get_selected_graph().unwrap().unwrap();
-        let query = aql::parse("annis:doc=\"zossen-2\"", false).unwrap();
-        let count = aql::execute_query_on_graph(&graph.read(), &query, true, None)
-            .unwrap()
-            .count();
-        assert_eq!(1, count);
-    }
 }
 
 #[test]
@@ -146,35 +132,32 @@ fn add_and_delete_entry() {
 
     // Select the corpus and the document
     harness.get_by_label("single_sentence").click();
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
     harness.get_by_label("single_sentence/zossen").click();
     harness.run();
 
-    wait_until_jobs_finished(&mut harness, app_state.clone());
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
 
-    // Manually set the values for namespace/name
-    {
-        let mut app = app_state.write();
-        app.corpus_tree
-            .as_mut()
-            .unwrap()
-            .data
-            .new_entry
-            .current_namespace = "test".to_string();
-        app.corpus_tree
-            .as_mut()
-            .unwrap()
-            .data
-            .new_entry
-            .current_name = "example-name".to_string();
-    };
+    let namespace_id = Id::new("new-metadata-entry-ns");
+    focus_and_wait(&mut harness, namespace_id);
+    harness
+        .get_by(|n| n.id().0 == namespace_id.value())
+        .type_text("test");
     harness.run();
 
+    let name_id = Id::new("new-metadata-entry-name");
+    focus_and_wait(&mut harness, name_id);
+    harness
+        .get_by(|n| n.id().0 == name_id.value())
+        .type_text("example");
+    harness.run();
+
+    let value_id = Id::new("new-metadata-entry-value");
+    focus_and_wait(&mut harness, value_id);
     // Fill out the the value text field
     let text_value = harness
         .get_all_by_role(Role::TextInput)
-        .filter(|t| t.id().0 == Id::from("new-metadata-entry-value").value())
+        .filter(|t| t.id().0 == value_id.value())
         .next()
         .unwrap();
     text_value.type_text("example-value");
@@ -182,16 +165,14 @@ fn add_and_delete_entry() {
 
     harness.get_by_label(PLUS_CIRCLE).click();
 
-    wait_until_jobs_finished(&mut harness, app_state.clone());
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
 
     let r1 = harness.try_wgpu_snapshot("after-adding-metadata");
 
     // Delete the entry again
     let delete_buttons: Vec<_> = harness.get_all_by_label(TRASH).collect();
     delete_buttons[3].click();
-    wait_until_jobs_finished(&mut harness, app_state.clone());
-    wait_for_corpus_tree(&mut harness, app_state.clone());
+    wait_for_editor(&mut harness, app_state.clone());
 
     let r2 = harness.try_wgpu_snapshot("after-deleting-metadata");
 

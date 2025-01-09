@@ -22,7 +22,8 @@ use graphannis_core::{
 };
 
 use super::{
-    job_executor::JobExecutor, Notifier, CHANGE_PENDING_COLOR_DARK, CHANGE_PENDING_COLOR_LIGHT,
+    job_executor::JobExecutor, views::Editor, Notifier, CHANGE_PENDING_COLOR_DARK,
+    CHANGE_PENDING_COLOR_LIGHT,
 };
 
 #[cfg(test)]
@@ -47,10 +48,12 @@ struct Data {
 }
 
 pub(crate) struct CorpusTree {
-    pub(crate) selected_corpus_node: Option<NodeID>,
+    selected_corpus_node: Option<NodeID>,
     data: Data,
     gs: Box<dyn WriteableGraphStorage>,
     graph: Arc<RwLock<AnnotationGraph>>,
+    jobs: JobExecutor,
+    notifier: Notifier,
 }
 
 impl Debug for CorpusTree {
@@ -63,7 +66,12 @@ impl Debug for CorpusTree {
 }
 
 impl CorpusTree {
-    pub fn create_from_graph(graph: Arc<RwLock<AnnotationGraph>>) -> anyhow::Result<Self> {
+    pub fn create_from_graph(
+        graph: Arc<RwLock<AnnotationGraph>>,
+        selected_corpus_node: Option<NodeID>,
+        jobs: JobExecutor,
+        notifier: Notifier,
+    ) -> anyhow::Result<Self> {
         // Create our own graph storage with inverted edges
         let mut inverted_corpus_graph = AdjacencyListStorage::new();
         {
@@ -94,33 +102,41 @@ impl CorpusTree {
             inverted_corpus_graph.calculate_statistics()?;
         }
 
-        Ok(Self {
-            selected_corpus_node: None,
+        let mut result = Self {
+            selected_corpus_node,
             data: Data::default(),
             gs: Box::new(inverted_corpus_graph),
+            jobs,
+            notifier,
             graph,
-        })
+        };
+
+        result.update_data_after_selection();
+
+        Ok(result)
     }
 
-    fn show_structure(&mut self, ui: &mut Ui, jobs: &JobExecutor, notifier: &Notifier) {
+    fn show_structure(&mut self, ui: &mut Ui) {
         let root_nodes: graphannis_core::errors::Result<Vec<_>> = self.gs.root_nodes().collect();
-        let root_nodes = notifier.unwrap_or_default(root_nodes.context("Could not get root nodes"));
+        let root_nodes = self
+            .notifier
+            .unwrap_or_default(root_nodes.context("Could not get root nodes"));
         ScrollArea::vertical().show(ui, |ui| {
             if root_nodes.len() > 1 {
                 CollapsingHeader::new("<root>")
                     .default_open(true)
                     .show(ui, |ui| {
                         for root_node in root_nodes.iter() {
-                            self.recursive_corpus_structure(ui, *root_node, 0, jobs, notifier)
+                            self.recursive_corpus_structure(ui, *root_node, 0)
                         }
                     });
             } else if let Some(root_node) = root_nodes.first() {
-                self.recursive_corpus_structure(ui, *root_node, 0, jobs, notifier)
+                self.recursive_corpus_structure(ui, *root_node, 0)
             }
         });
     }
 
-    fn show_meta_editor(&mut self, ui: &mut Ui, jobs: &JobExecutor, notifier: &Notifier) {
+    fn show_meta_editor(&mut self, ui: &mut Ui) {
         let marker_color = if ui.ctx().theme() == Theme::Light {
             CHANGE_PENDING_COLOR_LIGHT
         } else {
@@ -160,9 +176,9 @@ impl CorpusTree {
                         self.data.node_annos.len() + 1,
                         |mut row| {
                             if row.index() < self.data.node_annos.len() {
-                                self.show_existing_metadata_entries(&mut row, jobs, marker_color);
+                                self.show_existing_metadata_entries(&mut row, marker_color);
                             } else {
-                                self.show_new_metadata_row(&mut row, jobs, notifier);
+                                self.show_new_metadata_row(&mut row);
                             }
                         },
                     );
@@ -175,7 +191,6 @@ impl CorpusTree {
     fn show_existing_metadata_entries(
         &mut self,
         row: &mut TableRow<'_, '_>,
-        jobs: &JobExecutor,
         marker_color: Color32,
     ) {
         // Next rows are the actual ones
@@ -250,7 +265,7 @@ impl CorpusTree {
                 if entry_idx >= self.data.node_annos.len() {
                     entry_idx = self.data.node_annos.len() - 1;
                 }
-                self.apply_pending_updates(jobs);
+                self.apply_pending_updates();
             };
         });
 
@@ -267,16 +282,11 @@ impl CorpusTree {
         }
 
         if any_lost_focus && self.has_pending_updates() {
-            self.apply_pending_updates(jobs);
+            self.apply_pending_updates();
         }
     }
 
-    fn show_new_metadata_row(
-        &mut self,
-        row: &mut TableRow<'_, '_>,
-        jobs: &JobExecutor,
-        notifier: &Notifier,
-    ) {
+    fn show_new_metadata_row(&mut self, row: &mut TableRow<'_, '_>) {
         row.col(|ui| {
             TextEdit::singleline(&mut self.data.new_entry.current_namespace)
                 .id(Id::from("new-metadata-entry-ns"))
@@ -299,19 +309,20 @@ impl CorpusTree {
             }
 
             if add_button.clicked() {
-                self.add_new_entry(jobs, notifier);
+                self.add_new_entry();
             }
         });
     }
 
-    fn add_new_entry(&mut self, jobs: &JobExecutor, notifier: &Notifier) {
+    fn add_new_entry(&mut self) {
         if self.data.new_entry.current_name.is_empty() {
-            notifier.add_toast(Toast::error("Cannot add entry with empty name"));
+            self.notifier
+                .add_toast(Toast::error("Cannot add entry with empty name"));
         } else if self.data.node_annos.iter().any(|e| {
             e.current_namespace == self.data.new_entry.current_namespace
                 && e.current_name == self.data.new_entry.current_name
         }) {
-            notifier.add_toast(Toast::error(format!(
+            self.notifier.add_toast(Toast::error(format!(
                 "Entry with namespace \"{}\" and name \"{}\" already exists.",
                 self.data.new_entry.current_namespace, self.data.new_entry.current_name
             )));
@@ -332,20 +343,132 @@ impl CorpusTree {
             self.data.node_annos.sort();
             self.data.new_entry = MetaEntry::default();
 
-            self.apply_pending_updates(jobs);
+            self.apply_pending_updates();
         }
     }
-    pub(crate) fn has_pending_updates(&self) -> bool {
+
+    fn update_data_after_selection(&mut self) {
+        if let Some(parent) = self.selected_corpus_node {
+            self.data.node_annos.clear();
+            self.data.changed_keys.clear();
+
+            let graph = self.graph.read();
+            let anno_keys = graph
+                .get_node_annos()
+                .get_all_keys_for_item(&parent, None, None);
+            let anno_keys = self
+                .notifier
+                .unwrap_or_default(anno_keys.context("Could not get annotation keys"));
+            for k in anno_keys {
+                let anno_value = graph
+                    .get_node_annos()
+                    .get_value_for_item(&parent, &k)
+                    .map(|v| v.unwrap_or_default().to_string());
+                let anno_value = self
+                    .notifier
+                    .unwrap_or_default(anno_value.context("Could not get annotation value"));
+                self.data.node_annos.push(MetaEntry {
+                    original_namespace: k.ns.to_string(),
+                    original_name: k.name.to_string(),
+                    original_value: anno_value.clone(),
+                    current_namespace: k.ns.to_string(),
+                    current_name: k.name.to_string(),
+                    current_value: anno_value,
+                });
+            }
+            let parent_node_name = graph
+                .get_node_annos()
+                .get_value_for_item(&parent, &NODE_NAME_KEY);
+            let parent_node_name = self
+                .notifier
+                .unwrap_or_default(parent_node_name.context("Could not get parent node name"))
+                .unwrap_or_default();
+            self.data.parent_node_name = parent_node_name.to_string();
+            self.data.node_annos.sort();
+        }
+    }
+
+    fn select_corpus_node(&mut self, selection: Option<NodeID>) {
+        self.selected_corpus_node = selection;
+        self.update_data_after_selection();
+    }
+
+    fn recursive_corpus_structure(&mut self, ui: &mut Ui, parent: NodeID, level: usize) {
+        let child_nodes: graphannis_core::errors::Result<Vec<NodeID>> =
+            self.gs.get_outgoing_edges(parent).collect();
+        let child_nodes = self
+            .notifier
+            .unwrap_or_default(child_nodes.context("Could not get child nodes"));
+        let parent_node_name = {
+            let graph = self.graph.read();
+            match graph
+                .get_node_annos()
+                .get_value_for_item(&parent, &NODE_NAME_KEY)
+            {
+                Ok(o) => o.map(|o| o.to_string()),
+                Err(e) => {
+                    self.notifier.report_error(e.into());
+                    None
+                }
+            }
+        };
+
+        if let Some(parent_node_name) = parent_node_name {
+            if child_nodes.is_empty() {
+                let is_selected = self.selected_corpus_node.is_some_and(|n| n == parent);
+
+                let label = ui.selectable_label(is_selected, parent_node_name.clone());
+                if !is_selected && label.gained_focus() {
+                    self.select_corpus_node(Some(parent));
+                } else if label.clicked() {
+                    self.apply_pending_updates();
+                    label.request_focus();
+                    if is_selected {
+                        self.select_corpus_node(None);
+                    } else {
+                        self.select_corpus_node(Some(parent));
+                    }
+                }
+            } else {
+                CollapsingHeader::new(parent_node_name)
+                    .default_open(level == 0)
+                    .show(ui, |ui| {
+                        for child_corpus in &child_nodes {
+                            self.recursive_corpus_structure(ui, *child_corpus, level + 1);
+                        }
+                    });
+            }
+        } else {
+            self.notifier.add_toast(Toast::error("Node name not found"));
+        }
+    }
+}
+
+impl Editor for CorpusTree {
+    fn show(&mut self, ui: &mut Ui) {
+        ui.group(|ui| {
+            ui.heading("Corpus editor");
+
+            ui.columns_const(|[c1, c2]| {
+                c1.push_id("corpus_structure", |ui| {
+                    self.show_structure(ui);
+                });
+                c2.push_id("meta_editor", |ui| self.show_meta_editor(ui));
+            });
+        });
+    }
+
+    fn has_pending_updates(&self) -> bool {
         !self.data.changed_keys.is_empty()
     }
 
-    pub(crate) fn apply_pending_updates(&mut self, jobs: &JobExecutor) {
+    fn apply_pending_updates(&mut self) {
         if self.has_pending_updates() {
             // apply all changes as updates to our internal corpus graph
             let parent_node_name = self.data.parent_node_name.clone();
             let node_annos = self.data.node_annos.clone();
             let mut changed_keys = self.data.changed_keys.clone();
-            jobs.add(
+            self.jobs.add(
                 "Applying pending metadata updates",
                 move |_| {
                     let mut update = GraphUpdate::new();
@@ -383,7 +506,7 @@ impl CorpusTree {
                     Ok(update)
                 },
                 |update, app| {
-                    app.project.add_changeset(&app.jobs, update);
+                    app.project.add_changeset(update);
                 },
             );
             self.data.node_annos.sort();
@@ -391,119 +514,7 @@ impl CorpusTree {
         }
     }
 
-    pub(crate) fn show(&mut self, ui: &mut Ui, jobs: &JobExecutor, notifier: &Notifier) {
-        ui.group(|ui| {
-            ui.heading("Corpus editor");
-
-            ui.columns_const(|[c1, c2]| {
-                c1.push_id("corpus_structure", |ui| {
-                    self.show_structure(ui, jobs, notifier);
-                });
-                c2.push_id("meta_editor", |ui| {
-                    self.show_meta_editor(ui, jobs, notifier)
-                });
-            });
-        });
-    }
-
-    pub(crate) fn select_corpus_node(&mut self, selection: Option<NodeID>, notifier: &Notifier) {
-        self.selected_corpus_node = selection;
-        if let Some(parent) = self.selected_corpus_node {
-            self.data.node_annos.clear();
-            self.data.changed_keys.clear();
-
-            let graph = self.graph.read();
-            let anno_keys = graph
-                .get_node_annos()
-                .get_all_keys_for_item(&parent, None, None);
-            let anno_keys =
-                notifier.unwrap_or_default(anno_keys.context("Could not get annotation keys"));
-            for k in anno_keys {
-                let anno_value = graph
-                    .get_node_annos()
-                    .get_value_for_item(&parent, &k)
-                    .map(|v| v.unwrap_or_default().to_string());
-                let anno_value = notifier
-                    .unwrap_or_default(anno_value.context("Could not get annotation value"));
-                self.data.node_annos.push(MetaEntry {
-                    original_namespace: k.ns.to_string(),
-                    original_name: k.name.to_string(),
-                    original_value: anno_value.clone(),
-                    current_namespace: k.ns.to_string(),
-                    current_name: k.name.to_string(),
-                    current_value: anno_value,
-                });
-            }
-            let parent_node_name = graph
-                .get_node_annos()
-                .get_value_for_item(&parent, &NODE_NAME_KEY);
-            let parent_node_name = notifier
-                .unwrap_or_default(parent_node_name.context("Could not get parent node name"))
-                .unwrap_or_default();
-            self.data.parent_node_name = parent_node_name.to_string();
-            self.data.node_annos.sort();
-        }
-    }
-
-    fn recursive_corpus_structure(
-        &mut self,
-        ui: &mut Ui,
-        parent: NodeID,
-        level: usize,
-        jobs: &JobExecutor,
-        notifier: &Notifier,
-    ) {
-        let child_nodes: graphannis_core::errors::Result<Vec<NodeID>> =
-            self.gs.get_outgoing_edges(parent).collect();
-        let child_nodes =
-            notifier.unwrap_or_default(child_nodes.context("Could not get child nodes"));
-        let parent_node_name = {
-            let graph = self.graph.read();
-            match graph
-                .get_node_annos()
-                .get_value_for_item(&parent, &NODE_NAME_KEY)
-            {
-                Ok(o) => o.map(|o| o.to_string()),
-                Err(e) => {
-                    notifier.report_error(e.into());
-                    None
-                }
-            }
-        };
-
-        if let Some(parent_node_name) = parent_node_name {
-            if child_nodes.is_empty() {
-                let is_selected = self.selected_corpus_node.is_some_and(|n| n == parent);
-
-                let label = ui.selectable_label(is_selected, parent_node_name.clone());
-                if !is_selected && label.gained_focus() {
-                    self.select_corpus_node(Some(parent), notifier);
-                } else if label.clicked() {
-                    self.apply_pending_updates(jobs);
-                    label.request_focus();
-                    if is_selected {
-                        self.select_corpus_node(None, notifier);
-                    } else {
-                        self.select_corpus_node(Some(parent), notifier);
-                    }
-                }
-            } else {
-                CollapsingHeader::new(parent_node_name)
-                    .default_open(level == 0)
-                    .show(ui, |ui| {
-                        for child_corpus in &child_nodes {
-                            self.recursive_corpus_structure(
-                                ui,
-                                *child_corpus,
-                                level + 1,
-                                jobs,
-                                notifier,
-                            );
-                        }
-                    });
-            }
-        } else {
-            notifier.add_toast(Toast::error("Node name not found"));
-        }
+    fn get_selected_corpus_node(&self) -> Option<NodeID> {
+        self.selected_corpus_node
     }
 }

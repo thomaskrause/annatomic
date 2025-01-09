@@ -15,14 +15,11 @@ fn export_corpus() {
     {
         // Select the corpus and export it
         let mut app_state = app_state.write();
-        let jobs = app_state.jobs.clone();
         app_state
             .project
-            .select_corpus(&jobs, Some("single_sentence".to_string()));
+            .select_corpus(Some("single_sentence".to_string()));
 
-        app_state
-            .project
-            .export_to_graphml(export_location.path(), &jobs);
+        app_state.project.export_to_graphml(export_location.path());
     }
 
     // Execute the running jobs and check that the file has been created

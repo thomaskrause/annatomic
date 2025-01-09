@@ -1,21 +1,26 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 use clap::Parser;
 use corpus_tree::CorpusTree;
+use editors::DocumentEditor;
 use eframe::IntegrationInfo;
 use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme};
+use graphannis::graph::NodeID;
 use job_executor::JobExecutor;
 use messages::Notifier;
 use project::Project;
 use serde::{Deserialize, Serialize};
+use views::Editor;
 
 mod corpus_tree;
-mod job_executor;
+mod editors;
+pub(crate) mod job_executor;
 mod messages;
 mod project;
 #[cfg(test)]
 mod tests;
+pub(crate) mod util;
 mod views;
 
 pub(crate) const APP_ID: &str = "annatomic";
@@ -28,10 +33,13 @@ pub const CHANGE_PENDING_COLOR_DARK: Color32 = Color32::from_rgb(160, 50, 50);
 pub const CHANGE_PENDING_COLOR_LIGHT: Color32 = Color32::from_rgb(255, 128, 128);
 
 /// Which main view to show in the app
-#[derive(Default, serde::Deserialize, serde::Serialize, Clone)]
+#[derive(Default, serde::Deserialize, serde::Serialize, Clone, PartialEq)]
 pub(crate) enum MainView {
     #[default]
     Start,
+    EditDocument {
+        node_id: NodeID,
+    },
     Demo,
 }
 
@@ -57,30 +65,31 @@ pub struct AnnatomicApp {
     new_corpus_name: String,
     project: Project,
     #[serde(skip)]
-    pub(crate) corpus_tree: Option<CorpusTree>,
+    current_editor: OnceLock<Box<dyn Editor>>,
     #[serde(skip)]
     shutdown_request: ShutdownRequest,
     #[serde(skip)]
     jobs: JobExecutor,
     #[serde(skip)]
-    notifier: Arc<Notifier>,
+    notifier: Notifier,
     #[serde(skip)]
     args: AnnatomicArgs,
 }
 
 impl Default for AnnatomicApp {
     fn default() -> Self {
-        let notifier = Arc::new(Notifier::default());
-        let project = Project::new(notifier.clone());
+        let notifier = Notifier::default();
+        let jobs = JobExecutor::default();
+        let project = Project::new(notifier.clone(), jobs.clone());
 
         Self {
             main_view: MainView::Start,
             new_corpus_name: String::default(),
             project,
-            jobs: JobExecutor::default(),
+            jobs,
             notifier,
             args: AnnatomicArgs::default(),
-            corpus_tree: None,
+            current_editor: OnceLock::new(),
             shutdown_request: ShutdownRequest::None,
         }
     }
@@ -105,8 +114,8 @@ impl AnnatomicApp {
         // Set fonts once
         app.set_fonts(&cc.egui_ctx);
         // Rebuild the state that is not persisted but calculated
-        app.project.load_after_init(&app.jobs)?;
-
+        app.project
+            .load_after_init(app.notifier.clone(), app.jobs.clone())?;
         Ok(app)
     }
 
@@ -155,6 +164,83 @@ impl AnnatomicApp {
         ctx.set_fonts(defs);
     }
 
+    pub(crate) fn change_view(&mut self, new_view: MainView) {
+        if self.main_view != new_view {
+            self.main_view = new_view;
+            self.load_editor(true);
+        }
+    }
+
+    pub(crate) fn load_editor(&mut self, force_refresh: bool) {
+        let selected_corpus_node = {
+            self.current_editor
+                .get()
+                .and_then(|editor| editor.get_selected_corpus_node())
+        };
+        match self.main_view {
+            MainView::Start => {
+                if let Some(corpus) = &self.project.selected_corpus {
+                    let job_title = "Creating corpus tree editor";
+
+                    let needs_refresh = force_refresh || self.current_editor.get().is_none();
+                    if needs_refresh && !self.jobs.has_active_job_with_title(job_title) {
+                        self.current_editor = OnceLock::new();
+
+                        let corpus_cache = self.project.corpus_cache.clone();
+                        let jobs = self.jobs.clone();
+                        let notifier = self.notifier.clone();
+                        let location = corpus.location.clone();
+                        self.jobs.add(
+                            job_title,
+                            move |_| {
+                                let graph = corpus_cache.get(&location)?;
+                                let corpus_tree = CorpusTree::create_from_graph(
+                                    graph,
+                                    selected_corpus_node,
+                                    jobs,
+                                    notifier,
+                                )?;
+                                Ok(corpus_tree)
+                            },
+                            |corpus_tree, app| {
+                                app.current_editor.get_or_init(|| Box::new(corpus_tree));
+                            },
+                        );
+                    }
+                } else {
+                    self.current_editor = OnceLock::new();
+                }
+            }
+            MainView::EditDocument { node_id } => {
+                if let Some(corpus) = &self.project.selected_corpus {
+                    let job_title = "Creating document editor";
+                    let needs_refresh = force_refresh || self.current_editor.get().is_none();
+                    if needs_refresh && !self.jobs.has_active_job_with_title(job_title) {
+                        self.current_editor = OnceLock::new();
+                        let corpus_cache = self.project.corpus_cache.clone();
+                        let location = corpus.location.clone();
+                        self.jobs.add(
+                            job_title,
+                            move |_| {
+                                let graph = corpus_cache.get(&location)?;
+                                let document_editor =
+                                    DocumentEditor::create_from_graph(node_id, graph)?;
+
+                                Ok(document_editor)
+                            },
+                            |document_editor, app| {
+                                app.current_editor.get_or_init(|| Box::new(document_editor));
+                            },
+                        );
+                    }
+                }
+            }
+            MainView::Demo => {
+                self.current_editor = OnceLock::new();
+            }
+        }
+    }
+
     fn handle_corpus_confirmation_dialog(&mut self, ctx: &egui::Context) {
         if self.project.scheduled_for_deletion.is_some() {
             egui::Modal::new("corpus_deletion_confirmation".into()).show(ctx, |ui| {
@@ -183,22 +269,27 @@ impl AnnatomicApp {
                         )
                         .clicked()
                     {
-                        self.project.delete_corpus(&self.jobs, corpus_name);
+                        self.project.delete_corpus(corpus_name);
                     }
                 });
             });
         }
     }
 
+    pub(crate) fn select_corpus(&mut self, selection: Option<String>) {
+        self.project.select_corpus(selection);
+        self.load_editor(true);
+    }
+
     fn apply_pending_updates(&mut self) {
-        if let Some(ct) = self.corpus_tree.as_mut() {
-            ct.apply_pending_updates(&self.jobs);
+        if let Some(editor) = self.current_editor.get_mut() {
+            editor.apply_pending_updates();
         }
     }
 
     fn has_pending_updates(&self) -> bool {
-        if let Some(ct) = &self.corpus_tree {
-            ct.has_pending_updates()
+        if let Some(editor) = self.current_editor.get() {
+            editor.has_pending_updates()
         } else {
             false
         }
@@ -209,10 +300,10 @@ impl AnnatomicApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if ctx.input_mut(|i| i.consume_shortcut(&UNDO_SHORTCUT)) {
-            self.project.undo(&self.jobs);
+            self.project.undo();
         }
         if ctx.input_mut(|i| i.consume_shortcut(&REDO_SHORTCUT)) {
-            self.project.redo(&self.jobs);
+            self.project.redo();
         }
         if ctx.input_mut(|i| i.consume_shortcut(&SAVE_SHORTCUT)) {
             self.apply_pending_updates();
@@ -291,7 +382,7 @@ impl AnnatomicApp {
                         )
                         .clicked()
                     {
-                        self.project.undo(&self.jobs);
+                        self.project.undo();
                     }
                     if ui
                         .add_enabled(
@@ -300,7 +391,7 @@ impl AnnatomicApp {
                         )
                         .clicked()
                     {
-                        self.project.redo(&self.jobs);
+                        self.project.redo();
                     }
                 });
                 ui.menu_button("View", |ui| {
@@ -340,6 +431,7 @@ impl AnnatomicApp {
                 self.notifier.show(ctx);
                 let response = match self.main_view {
                     MainView::Start => views::start::show(ui, self),
+                    MainView::EditDocument { .. } => views::edit::show(ui, self),
                     MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {
@@ -358,6 +450,7 @@ impl eframe::App for AnnatomicApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.load_editor(false);
         self.show(ctx, frame.info());
     }
 
