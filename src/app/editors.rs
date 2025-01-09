@@ -43,11 +43,11 @@ fn make_whitespace_visible(v: &str) -> String {
 }
 
 impl Token {
-    fn value(&self) -> &str {
+    fn value(&self) -> String {
         if let Some(v) = &self.labels.get(&TOKEN_KEY) {
-            v.as_str()
+            make_whitespace_visible(v)
         } else {
-            ""
+            String::default()
         }
     }
 
@@ -141,6 +141,7 @@ impl DocumentEditor {
     fn show_single_token(&self, t: &Token, ui: &mut Ui) -> Response {
         let group_response = ui.group(|ui| {
             ui.set_min_width(100.0);
+            ui.set_min_height(0.0);
             ui.vertical(|ui| {
                 // Add the token information as first line
                 ui.horizontal(|ui| {
@@ -151,18 +152,24 @@ impl DocumentEditor {
                     };
                     ui.label(RichText::new(token_range).weak().small())
                 });
-                ui.horizontal(|ui| {
-                    // Put the whitespace and the actual value in one line
-                    let whitespace_before = t.whitespace_before();
-                    if !whitespace_before.is_empty() {
-                        ui.label(RichText::new(whitespace_before).weak());
-                    }
-                    ui.label(RichText::new(t.value()).strong());
-                    let whitespace_after = t.whitespace_after();
-                    if !whitespace_after.is_empty() {
-                        ui.label(RichText::new(whitespace_after).weak());
-                    }
-                });
+                let whitespace_before = t.whitespace_before();
+                let whitespace_after = t.whitespace_after();
+                let value = t.value();
+                if !value.is_empty()
+                    || !whitespace_before.is_empty()
+                    || !whitespace_after.is_empty()
+                {
+                    ui.horizontal(|ui| {
+                        // Put the whitespace and the actual value in one line
+                        if !whitespace_before.is_empty() {
+                            ui.label(RichText::new(whitespace_before).weak());
+                        }
+                        ui.label(RichText::new(t.value()).strong());
+                        if !whitespace_after.is_empty() {
+                            ui.label(RichText::new(whitespace_after).weak());
+                        }
+                    });
+                }
                 // Show all other labels
                 for (key, value) in t.labels.iter() {
                     if key.ns != ANNIS_NS {
