@@ -70,6 +70,7 @@ impl Token {
 pub(crate) struct DocumentEditor {
     token: Vec<Token>,
     segmentations: BTreeMap<String, Vec<Token>>,
+    min_token_width: Vec<Option<f32>>,
 }
 
 impl DocumentEditor {
@@ -78,7 +79,9 @@ impl DocumentEditor {
         graph: Arc<RwLock<AnnotationGraph>>,
     ) -> anyhow::Result<Self> {
         let mut token = Vec::new();
+        let mut min_token_width = Vec::new();
         let mut segmentations = BTreeMap::new();
+
         {
             let graph = graph.read();
             let tok_helper = TokenHelper::new(&graph)?;
@@ -99,6 +102,7 @@ impl DocumentEditor {
                     end: idx,
                 };
                 token.push(t);
+                min_token_width.push(None);
                 token_to_index.insert(node_id, idx);
             }
 
@@ -134,14 +138,16 @@ impl DocumentEditor {
         }
         Ok(Self {
             token,
+            min_token_width,
             segmentations,
         })
     }
 
     fn show_single_token(&self, t: &Token, ui: &mut Ui) -> Response {
         let group_response = ui.group(|ui| {
-            ui.set_min_width(100.0);
-            ui.set_min_height(0.0);
+            if let Some(min_width) = self.min_token_width[t.start] {
+                ui.set_min_width(min_width);
+            }
             ui.vertical(|ui| {
                 // Add the token information as first line
                 ui.horizontal(|ui| {
@@ -217,6 +223,8 @@ impl Editor for DocumentEditor {
             ui.vertical(|ui| {
                 for (_segmentation_name, seg_token) in &self.segmentations {
                     for t in seg_token.iter() {
+                        let span_value = t.value();
+
                         // Get the base token covered by this span and use them to create a rectangle
                         let mut covered_span = Rangef::NOTHING;
                         for offset in t.start..=t.end {
@@ -236,13 +244,23 @@ impl Editor for DocumentEditor {
                                 Color32::DARK_GRAY,
                             );
 
-                            ui.painter().text(
+                            let actual_text_rect = ui.painter().text(
                                 segmentation_rectangle.center(),
                                 Align2::CENTER_CENTER,
-                                t.value(),
+                                span_value,
                                 FontId::proportional(text_style_body.size),
                                 Color32::WHITE,
                             );
+                            let span_text_width =
+                                actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
+                            for offset in t.start..=t.end {
+                                if let Some(existing) = &mut self.min_token_width[offset] {
+                                    self.min_token_width[offset] =
+                                        Some(existing.max(span_text_width));
+                                } else {
+                                    self.min_token_width[offset] = Some(span_text_width);
+                                }
+                            }
                         }
                     }
                     ui.add_space(span_height + ui_style.spacing.item_spacing.y);
