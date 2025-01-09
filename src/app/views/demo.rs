@@ -22,7 +22,7 @@ pub(crate) fn show(ui: &mut Ui, app: &mut AnnatomicApp) -> Result<()> {
     ui.heading("Annatomic Token demo");
 
     if ui.link("Go back to main view").clicked() {
-        app.main_view = MainView::Start;
+        app.change_view(MainView::Start);
     }
 
     egui::ScrollArea::horizontal().show(ui, |ui| {

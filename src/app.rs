@@ -122,11 +122,23 @@ impl AnnatomicApp {
     pub(crate) fn set_fonts(&self, ctx: &egui::Context) {
         let mut defs = egui::FontDefinitions::default();
 
-        // Icons and Emojis
+        // Symbols and Emojis
         defs.font_data.insert(
             "NotoEmoji-Regular".to_owned(),
             Arc::new(FontData::from_static(include_bytes!(
                 "../assets/Noto_Emoji/static/NotoEmoji-Regular.ttf"
+            ))),
+        );
+        defs.font_data.insert(
+            "NotoSansMath-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Sans_Math/NotoSansMath-Regular.ttf"
+            ))),
+        );
+        defs.font_data.insert(
+            "NotoSansSymbols2-Regular".to_owned(),
+            Arc::new(FontData::from_static(include_bytes!(
+                "../assets/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
             ))),
         );
 
@@ -152,6 +164,8 @@ impl AnnatomicApp {
             vec![
                 "NotoSans-Regular".to_owned(),
                 "NotoEmoji-Regular".to_owned(),
+                "NotoSansMath-Regular".to_owned(),
+                "NotoSansSymbols2-Regular".to_owned(),
             ],
         );
         defs.families.insert(
