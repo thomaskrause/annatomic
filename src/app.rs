@@ -95,6 +95,65 @@ impl Default for AnnatomicApp {
     }
 }
 
+pub(crate) fn set_fonts(ctx: &egui::Context) {
+    let mut defs = egui::FontDefinitions::default();
+
+    // Symbols and Emojis
+    defs.font_data.insert(
+        "NotoEmoji-Regular".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/Noto_Emoji/static/NotoEmoji-Regular.ttf"
+        ))),
+    );
+    defs.font_data.insert(
+        "NotoSansMath-Regular".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/Noto_Sans_Math/NotoSansMath-Regular.ttf"
+        ))),
+    );
+    defs.font_data.insert(
+        "NotoSansSymbols2-Regular".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
+        ))),
+    );
+
+    // Regular font
+    defs.font_data.insert(
+        "NotoSans-Regular".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/Noto_Sans/static/NotoSans-Regular.ttf"
+        ))),
+    );
+
+    // Monospaced font
+    defs.font_data.insert(
+        "NotoSansMono-Regular".to_owned(),
+        Arc::new(FontData::from_static(include_bytes!(
+            "../assets/Noto_Sans_Mono/static/NotoSansMono-Regular.ttf"
+        ))),
+    );
+
+    // Define the fonts to use for each font family
+    defs.families.insert(
+        egui::FontFamily::Proportional,
+        vec![
+            "NotoSans-Regular".to_owned(),
+            "NotoEmoji-Regular".to_owned(),
+            "NotoSansMath-Regular".to_owned(),
+            "NotoSansSymbols2-Regular".to_owned(),
+        ],
+    );
+    defs.families.insert(
+        egui::FontFamily::Monospace,
+        vec!["NotoSansMono-Regular".to_owned()],
+    );
+    // Phosphor icons
+    egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
+
+    ctx.set_fonts(defs);
+}
+
 impl AnnatomicApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>, args: AnnatomicArgs) -> Result<Self> {
@@ -112,70 +171,11 @@ impl AnnatomicApp {
             }
         };
         // Set fonts once
-        app.set_fonts(&cc.egui_ctx);
+        set_fonts(&cc.egui_ctx);
         // Rebuild the state that is not persisted but calculated
         app.project
             .load_after_init(app.notifier.clone(), app.jobs.clone())?;
         Ok(app)
-    }
-
-    pub(crate) fn set_fonts(&self, ctx: &egui::Context) {
-        let mut defs = egui::FontDefinitions::default();
-
-        // Symbols and Emojis
-        defs.font_data.insert(
-            "NotoEmoji-Regular".to_owned(),
-            Arc::new(FontData::from_static(include_bytes!(
-                "../assets/Noto_Emoji/static/NotoEmoji-Regular.ttf"
-            ))),
-        );
-        defs.font_data.insert(
-            "NotoSansMath-Regular".to_owned(),
-            Arc::new(FontData::from_static(include_bytes!(
-                "../assets/Noto_Sans_Math/NotoSansMath-Regular.ttf"
-            ))),
-        );
-        defs.font_data.insert(
-            "NotoSansSymbols2-Regular".to_owned(),
-            Arc::new(FontData::from_static(include_bytes!(
-                "../assets/Noto_Sans_Symbols_2/NotoSansSymbols2-Regular.ttf"
-            ))),
-        );
-
-        // Regular font
-        defs.font_data.insert(
-            "NotoSans-Regular".to_owned(),
-            Arc::new(FontData::from_static(include_bytes!(
-                "../assets/Noto_Sans/static/NotoSans-Regular.ttf"
-            ))),
-        );
-
-        // Monospaced font
-        defs.font_data.insert(
-            "NotoSansMono-Regular".to_owned(),
-            Arc::new(FontData::from_static(include_bytes!(
-                "../assets/Noto_Sans_Mono/static/NotoSansMono-Regular.ttf"
-            ))),
-        );
-
-        // Define the fonts to use for each font family
-        defs.families.insert(
-            egui::FontFamily::Proportional,
-            vec![
-                "NotoSans-Regular".to_owned(),
-                "NotoEmoji-Regular".to_owned(),
-                "NotoSansMath-Regular".to_owned(),
-                "NotoSansSymbols2-Regular".to_owned(),
-            ],
-        );
-        defs.families.insert(
-            egui::FontFamily::Monospace,
-            vec!["NotoSansMono-Regular".to_owned()],
-        );
-        // Phosphor icons
-        egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
-
-        ctx.set_fonts(defs);
     }
 
     pub(crate) fn change_view(&mut self, new_view: MainView) {

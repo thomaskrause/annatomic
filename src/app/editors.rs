@@ -2,13 +2,16 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use super::views::Editor;
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
-use egui::{mutex::RwLock, RichText, ScrollArea, Ui};
+use egui::{mutex::RwLock, Label, RichText, ScrollArea, Ui, Widget};
 use graphannis::{
     graph::{AnnoKey, NodeID},
     AnnotationGraph,
 };
 use graphannis_core::graph::{ANNIS_NS, NODE_NAME_KEY};
 use lazy_static::lazy_static;
+
+#[cfg(test)]
+mod tests;
 
 lazy_static! {
     static ref WITESPACE_BEFORE: Arc<AnnoKey> = Arc::from(AnnoKey {
@@ -99,7 +102,7 @@ impl Editor for DocumentEditor {
                     ui.group(|ui| {
                         ui.vertical(|ui| {
                             // Add the token information as first line
-                            ui.horizontal_top(|ui| {
+                            ui.horizontal(|ui| {
                                 let token_range = if t.start == t.end {
                                     t.start.to_string()
                                 } else {
@@ -119,6 +122,25 @@ impl Editor for DocumentEditor {
                                     ui.label(RichText::new(whitespace_after).weak());
                                 }
                             });
+                            // Show all other labels
+                            for (key, value) in t.labels.iter() {
+                                if key.ns != ANNIS_NS {
+                                    let key_label = if key.ns.is_empty() {
+                                        key.name.to_string()
+                                    } else {
+                                        format!("{}:{}", key.ns, key.name)
+                                    };
+
+                                    ui.horizontal(|ui| {
+                                        Label::new(value)
+                                            .wrap_mode(egui::TextWrapMode::Extend)
+                                            .ui(ui);
+                                        Label::new(RichText::new(key_label).weak().small_raised())
+                                            .wrap_mode(egui::TextWrapMode::Extend)
+                                            .ui(ui);
+                                    });
+                                }
+                            }
                         });
                     });
                 }
