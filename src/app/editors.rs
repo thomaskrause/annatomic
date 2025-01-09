@@ -209,7 +209,7 @@ impl Editor for DocumentEditor {
         let mut current_span_offset: f32 = 0.0;
 
         let mut token_offset_to_rect = HashMap::new();
-        ScrollArea::both().show(ui, |ui| {
+        ScrollArea::horizontal().show(ui, |ui| {
             ui.horizontal(|ui| {
                 for t in &self.token {
                     let response = self.show_single_token(t, ui);
@@ -238,27 +238,30 @@ impl Editor for DocumentEditor {
                             let max_pos =
                                 Pos2::new(covered_span.max, current_span_offset + span_height);
                             let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
-                            ui.painter().rect_filled(
-                                segmentation_rectangle,
-                                Rounding::ZERO,
-                                Color32::DARK_GRAY,
-                            );
 
-                            let actual_text_rect = ui.painter().text(
-                                segmentation_rectangle.center(),
-                                Align2::CENTER_CENTER,
-                                span_value,
-                                FontId::proportional(text_style_body.size),
-                                Color32::WHITE,
-                            );
-                            let span_text_width =
-                                actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
-                            for offset in t.start..=t.end {
-                                if let Some(existing) = &mut self.min_token_width[offset] {
-                                    self.min_token_width[offset] =
-                                        Some(existing.max(span_text_width));
-                                } else {
-                                    self.min_token_width[offset] = Some(span_text_width);
+                            if ui.is_rect_visible(segmentation_rectangle) {
+                                ui.painter().rect_filled(
+                                    segmentation_rectangle,
+                                    Rounding::ZERO,
+                                    Color32::DARK_GRAY,
+                                );
+
+                                let actual_text_rect = ui.painter().text(
+                                    segmentation_rectangle.center(),
+                                    Align2::CENTER_CENTER,
+                                    span_value,
+                                    FontId::proportional(text_style_body.size),
+                                    Color32::WHITE,
+                                );
+                                let span_text_width =
+                                    actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
+                                for offset in t.start..=t.end {
+                                    if let Some(existing) = &mut self.min_token_width[offset] {
+                                        self.min_token_width[offset] =
+                                            Some(existing.max(span_text_width));
+                                    } else {
+                                        self.min_token_width[offset] = Some(span_text_width);
+                                    }
                                 }
                             }
                         }
