@@ -6,7 +6,8 @@ use std::{
 use super::views::Editor;
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
 use egui::{
-    mutex::RwLock, Color32, Label, Response, RichText, Rounding, ScrollArea, Ui, Vec2, Widget,
+    mutex::RwLock, Align2, Color32, FontId, Label, Pos2, Rangef, Rect, Response, RichText,
+    Rounding, ScrollArea, Ui, Widget,
 };
 use graphannis::{
     graph::{AnnoKey, NodeID},
@@ -115,7 +116,7 @@ impl DocumentEditor {
                         }
                         let covered = tok_helper.covered_token(*node_id)?;
                         let start = covered.first().and_then(|t| token_to_index.get(t));
-                        let end = covered.first().and_then(|t| token_to_index.get(t));
+                        let end = covered.last().and_then(|t| token_to_index.get(t));
                         if let (Some(start), Some(end)) = (start, end) {
                             let t = Token {
                                 labels,
@@ -139,6 +140,7 @@ impl DocumentEditor {
 
     fn show_single_token(&self, t: &Token, ui: &mut Ui) -> Response {
         let group_response = ui.group(|ui| {
+            ui.set_min_width(100.0);
             ui.vertical(|ui| {
                 // Add the token information as first line
                 ui.horizontal(|ui| {
@@ -188,54 +190,60 @@ impl DocumentEditor {
 
 impl Editor for DocumentEditor {
     fn show(&mut self, ui: &mut Ui) {
-        let span_height = 20.0;
-        let mut current_span_offset = 0.0;
+        let ui_style = ui.style().clone();
+        let text_style_body = egui::TextStyle::Body.resolve(&ui_style);
+        let span_height = text_style_body.size * 1.5;
+        let mut current_span_offset: f32 = 0.0;
+
         let mut token_offset_to_rect = HashMap::new();
-        ScrollArea::horizontal().show(ui, |ui| {
+        ScrollArea::both().show(ui, |ui| {
             ui.horizontal(|ui| {
                 for t in &self.token {
                     let response = self.show_single_token(t, ui);
                     let token_rect = response.rect;
+                    current_span_offset = current_span_offset.max(token_rect.bottom());
                     token_offset_to_rect.insert(t.start, token_rect);
                 }
             });
-            for (_segmentation_name, seg_token) in &self.segmentations {
-                current_span_offset += span_height;
-                // Add some space to paint to
-                ui.add_space(span_height);
-                for t in seg_token.iter() {
-                    // Get the base token covered by this span and use them to create a rectangle
-                    let mut segmentation_rectangle = None;
-                    for offset in t.start..=t.end {
-                        if let Some(token_rect) = token_offset_to_rect.get(&offset) {
-                            let token_rect =
-                                token_rect.translate(Vec2::new(0.0, current_span_offset));
-                            segmentation_rectangle = Some(
-                                segmentation_rectangle
-                                    .get_or_insert(token_rect)
-                                    .union(token_rect),
+            current_span_offset += ui_style.spacing.item_spacing.y;
+
+            ui.vertical(|ui| {
+                for (_segmentation_name, seg_token) in &self.segmentations {
+                    for t in seg_token.iter() {
+                        // Get the base token covered by this span and use them to create a rectangle
+                        let mut covered_span = Rangef::NOTHING;
+                        for offset in t.start..=t.end {
+                            if let Some(token_rect) = token_offset_to_rect.get(&offset) {
+                                covered_span.min = covered_span.min.min(token_rect.left());
+                                covered_span.max = covered_span.max.max(token_rect.right());
+                            }
+                        }
+                        if covered_span.span() > 0.0 {
+                            let min_pos = Pos2::new(covered_span.min, current_span_offset);
+                            let max_pos =
+                                Pos2::new(covered_span.max, current_span_offset + span_height);
+                            let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
+                            ui.painter().rect_filled(
+                                segmentation_rectangle,
+                                Rounding::ZERO,
+                                Color32::DARK_GRAY,
+                            );
+
+                            ui.painter().text(
+                                segmentation_rectangle.center(),
+                                Align2::CENTER_CENTER,
+                                t.value(),
+                                FontId::proportional(text_style_body.size),
+                                Color32::WHITE,
                             );
                         }
                     }
-                    if let Some(segmentation_rectangle) = segmentation_rectangle {
-                        ui.painter().rect_filled(
-                            segmentation_rectangle,
-                            Rounding::ZERO,
-                            Color32::DARK_GRAY,
-                        );
-
-                        // ui.painter().text(
-                        //     sentence_rectangle.center(),
-                        //     Align2::CENTER_CENTER,
-                        //     format!("Sentence {sent_nr}"),
-                        //     FontId::proportional(14.0),
-                        //     Color32::WHITE,
-                        // );
-                    }
+                    ui.add_space(span_height + ui_style.spacing.item_spacing.y);
+                    current_span_offset += span_height + ui_style.spacing.item_spacing.y;
                 }
-            }
-            // Add some space for the scrollbar handle
-            ui.add_space(10.0);
+                // Add additional space for the scrollbar
+                ui.add_space(10.0);
+            });
         });
     }
 
