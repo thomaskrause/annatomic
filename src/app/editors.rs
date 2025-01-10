@@ -129,7 +129,7 @@ impl DocumentEditor {
                             };
                             segmentations
                                 .entry(ordering_component.name.to_string())
-                                .or_insert_with(|| Vec::default())
+                                .or_insert_with(Vec::default)
                                 .push(t);
                         }
                     }
@@ -221,7 +221,7 @@ impl Editor for DocumentEditor {
             current_span_offset += ui_style.spacing.item_spacing.y;
 
             ui.vertical(|ui| {
-                for (_segmentation_name, seg_token) in &self.segmentations {
+                for seg_token in self.segmentations.values() {
                     for t in seg_token.iter() {
                         let span_value = t.value();
 

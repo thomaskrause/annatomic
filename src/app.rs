@@ -40,7 +40,6 @@ pub(crate) enum MainView {
     EditDocument {
         node_id: NodeID,
     },
-    Demo,
 }
 
 #[derive(Parser, Debug, Default, Serialize, Deserialize)]
@@ -249,9 +248,6 @@ impl AnnatomicApp {
                     }
                 }
             }
-            MainView::Demo => {
-                self.current_editor = OnceLock::new();
-            }
         }
     }
 
@@ -409,9 +405,6 @@ impl AnnatomicApp {
                     }
                 });
                 ui.menu_button("View", |ui| {
-                    if self.args.dev && ui.button("Go to span demo").clicked() {
-                        self.main_view = MainView::Demo
-                    }
                     egui::gui_zoom::zoom_menu_buttons(ui);
                 });
                 ui.add_space(16.0);
@@ -446,7 +439,6 @@ impl AnnatomicApp {
                 let response = match self.main_view {
                     MainView::Start => views::start::show(ui, self),
                     MainView::EditDocument { .. } => views::edit::show(ui, self),
-                    MainView::Demo => views::demo::show(ui, self),
                 };
                 if let Err(e) = response {
                     self.notifier.report_error(e);
