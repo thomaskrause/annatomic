@@ -41,7 +41,7 @@ pub(crate) fn create_test_harness(
             cpu_usage: Some(3.14),
         };
         let mut app_state = app_state.write();
-        app_state.set_fonts(ctx);
+        set_fonts(ctx);
         app_state.show(ctx, &frame_info);
     };
 

@@ -2,12 +2,15 @@ use anyhow::{anyhow, Result};
 use graphannis::{graph::GraphStorage, model::AnnotationComponentType, AnnotationGraph};
 use graphannis_core::{
     annostorage::NodeAnnotationStorage,
-    graph::ANNIS_NS,
+    dfs,
+    graph::{storage::union::UnionEdgeContainer, ANNIS_NS},
     types::{AnnoKey, Component, NodeID},
 };
 
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, HashSet},
     sync::Arc,
 };
@@ -15,6 +18,7 @@ use std::{
 #[derive(Clone)]
 pub struct TokenHelper<'a> {
     node_annos: &'a dyn NodeAnnotationStorage,
+    cov_edges: Vec<Arc<dyn GraphStorage>>,
     ordering_gs: BTreeMap<String, Arc<dyn GraphStorage>>,
     part_of_gs: Arc<dyn GraphStorage>,
 }
@@ -42,6 +46,18 @@ lazy_static! {
 
 impl<'a> TokenHelper<'a> {
     pub fn new(graph: &'a AnnotationGraph) -> anyhow::Result<TokenHelper<'a>> {
+        let cov_edges: Vec<Arc<dyn GraphStorage>> = graph
+            .get_all_components(Some(AnnotationComponentType::Coverage), None)
+            .into_iter()
+            .filter_map(|c| graph.get_graphstorage(&c))
+            .filter(|gs| {
+                if let Some(stats) = gs.get_statistics() {
+                    stats.nodes > 0
+                } else {
+                    true
+                }
+            })
+            .collect();
         let mut ordering_gs = BTreeMap::new();
 
         for c in graph.get_all_components(Some(AnnotationComponentType::Ordering), None) {
@@ -58,9 +74,29 @@ impl<'a> TokenHelper<'a> {
 
         Ok(TokenHelper {
             node_annos: graph.get_node_annos(),
+            cov_edges,
             ordering_gs,
             part_of_gs,
         })
+    }
+
+    pub fn is_token(&self, id: NodeID) -> anyhow::Result<bool> {
+        if self.node_annos.has_value_for_item(&id, &TOKEN_KEY)? {
+            // check if there is no outgoing edge in any of the coverage components
+            let has_outgoing = self.has_outgoing_coverage_edges(id)?;
+            Ok(!has_outgoing)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn has_outgoing_coverage_edges(&self, id: NodeID) -> anyhow::Result<bool> {
+        for c in self.cov_edges.iter() {
+            if c.has_outgoing_edges(id)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub fn get_ordered_token(
@@ -125,6 +161,44 @@ impl<'a> TokenHelper<'a> {
         // TODO: support whitespace after/before annotations
         let anno_values = anno_values?.into_iter().flatten().collect_vec();
         let result = anno_values.join(" ");
+        Ok(result)
+    }
+
+    /// Find all token covered by the given node
+    pub fn covered_token(&self, node_id: NodeID) -> Result<Vec<NodeID>> {
+        let mut result = Vec::default();
+        let coverage = UnionEdgeContainer::new(
+            self.cov_edges
+                .iter()
+                .map(|gs| gs.as_edgecontainer())
+                .collect_vec(),
+        );
+        let it = dfs::CycleSafeDFS::new(&coverage, node_id, 1, usize::MAX);
+        for step in it {
+            let step = step?;
+            if self.is_token(step.node)? {
+                result.push(step.node);
+            }
+        }
+
+        // Sort token by their order
+        if let Some(gs) = self.ordering_gs.get("") {
+            result.sort_by(|a, b| {
+                if a == b {
+                    Ordering::Equal
+                } else if let Ok(connected) = gs.is_connected(*a, *b, 1, std::ops::Bound::Unbounded)
+                {
+                    if connected {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    }
+                } else {
+                    Ordering::Less
+                }
+            });
+        }
+
         Ok(result)
     }
 }

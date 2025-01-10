@@ -1,7 +1,6 @@
 use egui::Ui;
 use graphannis::graph::NodeID;
 
-pub(crate) mod demo;
 pub(crate) mod edit;
 pub(crate) mod start;
 
