@@ -147,7 +147,7 @@ impl DocumentEditor {
             token,
             layout_info: LayoutInfo {
                 valid: false,
-                min_token_width: vec![0.0; nr_token],
+                min_token_width: Vec::new(),
                 token_offset_start: vec![0.0; nr_token],
                 token_offset_end: vec![0.0; nr_token],
             },
@@ -157,11 +157,10 @@ impl DocumentEditor {
 
     fn show_single_token(&self, t: &Token, ui: &mut Ui) -> Response {
         let group_response = ui.group(|ui| {
-            if self.layout_info.valid {
-                if let Some(min_width) = self.layout_info.min_token_width.get(t.start) {
-                    ui.set_min_width(*min_width);
-                }
+            if let Some(min_width) = self.layout_info.min_token_width.get(t.start) {
+                ui.set_min_width(*min_width);
             }
+
             ui.vertical(|ui| {
                 // Add the token information as first line
                 ui.horizontal(|ui| {
@@ -279,6 +278,10 @@ impl Editor for DocumentEditor {
             });
             current_span_offset += ui_style.spacing.item_spacing.y;
 
+            if self.layout_info.min_token_width.is_empty() {
+                self.layout_info.min_token_width = vec![0.0; self.token.len()];
+            }
+
             ui.vertical(|ui| {
                 for seg_token in self.segmentations.values() {
                     for t in seg_token.iter() {
@@ -333,7 +336,7 @@ impl Editor for DocumentEditor {
                 // Add additional space for the scrollbar
                 ui.add_space(10.0);
             });
-            if visible_range.start == 0.0 {
+            if visible_range.start == 0.0 && !self.layout_info.min_token_width.is_empty() {
                 self.layout_info.valid = true;
             }
         });
