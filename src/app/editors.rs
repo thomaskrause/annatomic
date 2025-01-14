@@ -299,12 +299,14 @@ impl Editor for DocumentEditor {
 
                         // Get the base token covered by this span and use them to create a rectangle
                         let mut covered_span = Rangef::NOTHING;
-                        for token_rect in token_offset_to_rect.iter().take(t.end + 1).skip(t.start)
+                        for token_rect in token_offset_to_rect
+                            .iter()
+                            .take(t.end + 1)
+                            .skip(t.start)
+                            .flatten()
                         {
-                            if let Some(token_rect) = token_rect {
-                                covered_span.min = covered_span.min.min(token_rect.left());
-                                covered_span.max = covered_span.max.max(token_rect.right());
-                            }
+                            covered_span.min = covered_span.min.min(token_rect.left());
+                            covered_span.max = covered_span.max.max(token_rect.right());
                         }
                         if covered_span.span() > 0.0 {
                             let min_pos = Pos2::new(covered_span.min, current_span_offset);
