@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{BTreeMap, HashMap},
     sync::Arc,
 };
@@ -31,46 +32,61 @@ lazy_static! {
     });
 }
 
+fn make_whitespace_visible<S: AsRef<str>>(v: &S) -> String {
+    v.as_ref().replace(' ', "␣").replace('\n', "↵")
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct DisplayedToken {
+    value: String,
+    whitespace_before: String,
+    whitespace_after: String,
+}
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct Token {
     start: usize,
     end: usize,
     labels: BTreeMap<AnnoKey, String>,
-}
-
-fn make_whitespace_visible(v: &str) -> String {
-    v.replace(' ', "␣").replace('\n', "↵")
+    displayed: DisplayedToken,
 }
 
 impl Token {
-    fn value(&self) -> String {
-        if let Some(v) = &self.labels.get(&TOKEN_KEY) {
-            make_whitespace_visible(v)
-        } else {
-            String::default()
+    fn new(start: usize, end: usize, labels: BTreeMap<AnnoKey, String>) -> Self {
+        let displayed = DisplayedToken {
+            value: labels
+                .get(&TOKEN_KEY)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+            whitespace_before: labels
+                .get(&WITESPACE_BEFORE)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+            whitespace_after: labels
+                .get(&WITESPACE_AFTER)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+        };
+        Token {
+            start,
+            end,
+            labels,
+            displayed,
         }
     }
+}
 
-    fn whitespace_before(&self) -> String {
-        if let Some(v) = &self.labels.get(&WITESPACE_BEFORE) {
-            make_whitespace_visible(v)
-        } else {
-            String::default()
-        }
-    }
-    fn whitespace_after(&self) -> String {
-        if let Some(v) = &self.labels.get(&WITESPACE_AFTER) {
-            make_whitespace_visible(v)
-        } else {
-            String::default()
-        }
-    }
+struct LayoutInfo {
+    valid: bool,
+    min_token_width: Vec<f32>,
+    token_offset_start: Vec<f32>,
+    token_offset_end: Vec<f32>,
 }
 
 pub(crate) struct DocumentEditor {
     token: Vec<Token>,
     segmentations: BTreeMap<String, Vec<Token>>,
-    min_token_width: Vec<Option<f32>>,
+    layout_info: LayoutInfo,
 }
 
 impl DocumentEditor {
@@ -79,7 +95,6 @@ impl DocumentEditor {
         graph: Arc<RwLock<AnnotationGraph>>,
     ) -> anyhow::Result<Self> {
         let mut token = Vec::new();
-        let mut min_token_width = Vec::new();
         let mut segmentations = BTreeMap::new();
 
         {
@@ -96,13 +111,8 @@ impl DocumentEditor {
                 for anno in graph.get_node_annos().get_annotations_for_item(node_id)? {
                     labels.insert(anno.key, anno.val.to_string());
                 }
-                let t = Token {
-                    labels,
-                    start: idx,
-                    end: idx,
-                };
+                let t = Token::new(idx, idx, labels);
                 token.push(t);
-                min_token_width.push(None);
                 token_to_index.insert(node_id, idx);
             }
 
@@ -122,11 +132,8 @@ impl DocumentEditor {
                         let start = covered.first().and_then(|t| token_to_index.get(t));
                         let end = covered.last().and_then(|t| token_to_index.get(t));
                         if let (Some(start), Some(end)) = (start, end) {
-                            let t = Token {
-                                labels,
-                                start: *start,
-                                end: *end,
-                            };
+                            let t = Token::new(*start, *end, labels);
+
                             segmentations
                                 .entry(ordering_component.name.to_string())
                                 .or_insert_with(Vec::default)
@@ -136,18 +143,25 @@ impl DocumentEditor {
                 }
             }
         }
+        let nr_token = token.len();
         Ok(Self {
             token,
-            min_token_width,
+            layout_info: LayoutInfo {
+                valid: false,
+                min_token_width: Vec::new(),
+                token_offset_start: vec![0.0; nr_token],
+                token_offset_end: vec![0.0; nr_token],
+            },
             segmentations,
         })
     }
 
     fn show_single_token(&self, t: &Token, ui: &mut Ui) -> Response {
         let group_response = ui.group(|ui| {
-            if let Some(min_width) = self.min_token_width[t.start] {
-                ui.set_min_width(min_width);
+            if let Some(min_width) = self.layout_info.min_token_width.get(t.start) {
+                ui.set_min_width(*min_width);
             }
+
             ui.vertical(|ui| {
                 // Add the token information as first line
                 ui.horizontal(|ui| {
@@ -158,21 +172,19 @@ impl DocumentEditor {
                     };
                     ui.label(RichText::new(token_range).weak().small())
                 });
-                let whitespace_before = t.whitespace_before();
-                let whitespace_after = t.whitespace_after();
-                let value = t.value();
-                if !value.is_empty()
-                    || !whitespace_before.is_empty()
-                    || !whitespace_after.is_empty()
+                let displayed = &t.displayed;
+                if !displayed.value.is_empty()
+                    || !displayed.whitespace_before.is_empty()
+                    || !displayed.whitespace_after.is_empty()
                 {
                     ui.horizontal(|ui| {
                         // Put the whitespace and the actual value in one line
-                        if !whitespace_before.is_empty() {
-                            ui.label(RichText::new(whitespace_before).weak());
+                        if !t.displayed.whitespace_before.is_empty() {
+                            ui.label(RichText::new(&displayed.whitespace_before).weak());
                         }
-                        ui.label(RichText::new(t.value()).strong());
-                        if !whitespace_after.is_empty() {
-                            ui.label(RichText::new(whitespace_after).weak());
+                        ui.label(RichText::new(&displayed.value).strong());
+                        if !t.displayed.whitespace_after.is_empty() {
+                            ui.label(RichText::new(&displayed.whitespace_after).weak());
                         }
                     });
                 }
@@ -208,30 +220,93 @@ impl Editor for DocumentEditor {
         let span_height = text_style_body.size * 1.5;
         let mut current_span_offset: f32 = 0.0;
 
-        let mut token_offset_to_rect = HashMap::new();
-        ScrollArea::horizontal().show(ui, |ui| {
+        // Remember the location of each token, so we can paint the spans with
+        // the same range later
+        let mut token_offset_to_rect = vec![None; self.token.len()];
+        ScrollArea::horizontal().show_viewport(ui, |ui, visible_rect| {
+            if !self.layout_info.valid {
+                ui.scroll_to_cursor(Some(egui::Align::LEFT));
+            }
+            // If we already calculated the token positions once, only render
+            // the token and their covering spans that are currently displayed
+            let mut first_visible_token: usize = 0;
+            let last_token_index = self.token.len() - 1;
+            let mut last_visible_token: usize = last_token_index;
+            let visible_range = visible_rect.x_range().min..visible_rect.x_range().max;
+            if self.layout_info.valid {
+                first_visible_token = self
+                    .layout_info
+                    .token_offset_start
+                    .partition_point(|x| {
+                        x.partial_cmp(&visible_range.start)
+                            .unwrap_or(Ordering::Equal)
+                            .is_lt()
+                    })
+                    .saturating_sub(1);
+                last_visible_token = self
+                    .layout_info
+                    .token_offset_end
+                    .partition_point(|x| {
+                        x.partial_cmp(&visible_range.end)
+                            .unwrap_or(Ordering::Equal)
+                            .is_lt()
+                    })
+                    .saturating_add(1);
+            }
+            if last_visible_token > last_token_index {
+                last_visible_token = last_token_index
+            }
+
             ui.horizontal(|ui| {
-                for t in &self.token {
+                if self.layout_info.valid && first_visible_token > 0 {
+                    // Add the space needed for the non-rendered token at the beginning
+                    ui.add_space(self.layout_info.token_offset_end[first_visible_token - 1]);
+                }
+
+                for t in &self.token[first_visible_token..=last_visible_token] {
                     let response = self.show_single_token(t, ui);
                     let token_rect = response.rect;
                     current_span_offset = current_span_offset.max(token_rect.bottom());
-                    token_offset_to_rect.insert(t.start, token_rect);
+                    token_offset_to_rect[t.start] = Some(token_rect);
+
+                    if !self.layout_info.valid {
+                        let offset_range = token_rect.x_range();
+                        self.layout_info.token_offset_start[t.start] = offset_range.min;
+                        self.layout_info.token_offset_end[t.start] = offset_range.max;
+                    }
+                }
+                if self.layout_info.valid && last_visible_token < last_token_index {
+                    // Add the space needed for the non-rendered token at the end
+                    let visible_token_end = self.layout_info.token_offset_end[last_visible_token];
+                    let last_token_end = self.layout_info.token_offset_end[last_token_index];
+                    let space = last_token_end - visible_token_end;
+
+                    if space > 0.0 {
+                        ui.add_space(space);
+                    }
                 }
             });
             current_span_offset += ui_style.spacing.item_spacing.y;
 
+            if self.layout_info.min_token_width.is_empty() {
+                self.layout_info.min_token_width = vec![0.0; self.token.len()];
+            }
+
             ui.vertical(|ui| {
                 for seg_token in self.segmentations.values() {
                     for t in seg_token.iter() {
-                        let span_value = t.value();
+                        let span_value = &t.displayed.value;
 
                         // Get the base token covered by this span and use them to create a rectangle
                         let mut covered_span = Rangef::NOTHING;
-                        for offset in t.start..=t.end {
-                            if let Some(token_rect) = token_offset_to_rect.get(&offset) {
-                                covered_span.min = covered_span.min.min(token_rect.left());
-                                covered_span.max = covered_span.max.max(token_rect.right());
-                            }
+                        for token_rect in token_offset_to_rect
+                            .iter()
+                            .take(t.end + 1)
+                            .skip(t.start)
+                            .flatten()
+                        {
+                            covered_span.min = covered_span.min.min(token_rect.left());
+                            covered_span.max = covered_span.max.max(token_rect.right());
                         }
                         if covered_span.span() > 0.0 {
                             let min_pos = Pos2::new(covered_span.min, current_span_offset);
@@ -256,11 +331,13 @@ impl Editor for DocumentEditor {
                                 let span_text_width =
                                     actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
                                 for offset in t.start..=t.end {
-                                    if let Some(existing) = &mut self.min_token_width[offset] {
-                                        self.min_token_width[offset] =
-                                            Some(existing.max(span_text_width));
+                                    if let Some(existing) =
+                                        self.layout_info.min_token_width.get(offset)
+                                    {
+                                        self.layout_info.min_token_width[offset] =
+                                            existing.max(span_text_width);
                                     } else {
-                                        self.min_token_width[offset] = Some(span_text_width);
+                                        self.layout_info.min_token_width[offset] = span_text_width;
                                     }
                                 }
                             }
@@ -272,6 +349,9 @@ impl Editor for DocumentEditor {
                 // Add additional space for the scrollbar
                 ui.add_space(10.0);
             });
+            if visible_range.start == 0.0 && !self.layout_info.min_token_width.is_empty() {
+                self.layout_info.valid = true;
+            }
         });
     }
 
