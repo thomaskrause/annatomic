@@ -32,8 +32,8 @@ lazy_static! {
     });
 }
 
-fn make_whitespace_visible(v: &String) -> String {
-    v.replace(' ', "␣").replace('\n', "↵")
+fn make_whitespace_visible<S: AsRef<str>>(v: &S) -> String {
+    v.as_ref().replace(' ', "␣").replace('\n', "↵")
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -299,8 +299,9 @@ impl Editor for DocumentEditor {
 
                         // Get the base token covered by this span and use them to create a rectangle
                         let mut covered_span = Rangef::NOTHING;
-                        for offset in t.start..=t.end {
-                            if let Some(token_rect) = token_offset_to_rect[offset] {
+                        for token_rect in token_offset_to_rect.iter().take(t.end + 1).skip(t.start)
+                        {
+                            if let Some(token_rect) = token_rect {
                                 covered_span.min = covered_span.min.min(token_rect.left());
                                 covered_span.max = covered_span.max.max(token_rect.right());
                             }
