@@ -229,20 +229,32 @@ impl Editor for DocumentEditor {
             }
             // If we already calculated the token positions once, only render
             // the token and their covering spans that are currently displayed
-            let mut first_visible_token = 0;
-            let mut last_visible_token = self.token.len();
+            let mut first_visible_token: usize = 0;
+            let last_token_index = self.token.len() - 1;
+            let mut last_visible_token: usize = last_token_index;
             let visible_range = visible_rect.x_range().min..visible_rect.x_range().max;
             if self.layout_info.valid {
-                first_visible_token = self.layout_info.token_offset_start.partition_point(|x| {
-                    x.partial_cmp(&visible_range.start)
-                        .unwrap_or(Ordering::Equal)
-                        .is_lt()
-                });
-                last_visible_token = self.layout_info.token_offset_end.partition_point(|x| {
-                    x.partial_cmp(&visible_range.end)
-                        .unwrap_or(Ordering::Equal)
-                        .is_lt()
-                });
+                first_visible_token = self
+                    .layout_info
+                    .token_offset_start
+                    .partition_point(|x| {
+                        x.partial_cmp(&visible_range.start)
+                            .unwrap_or(Ordering::Equal)
+                            .is_lt()
+                    })
+                    .saturating_sub(1);
+                last_visible_token = self
+                    .layout_info
+                    .token_offset_end
+                    .partition_point(|x| {
+                        x.partial_cmp(&visible_range.end)
+                            .unwrap_or(Ordering::Equal)
+                            .is_lt()
+                    })
+                    .saturating_add(1);
+            }
+            if last_visible_token > last_token_index {
+                last_visible_token = last_token_index
             }
 
             ui.horizontal(|ui| {
@@ -251,7 +263,7 @@ impl Editor for DocumentEditor {
                     ui.add_space(self.layout_info.token_offset_end[first_visible_token - 1]);
                 }
 
-                for t in &self.token[first_visible_token..last_visible_token] {
+                for t in &self.token[first_visible_token..=last_visible_token] {
                     let response = self.show_single_token(t, ui);
                     let token_rect = response.rect;
                     current_span_offset = current_span_offset.max(token_rect.bottom());
@@ -263,11 +275,10 @@ impl Editor for DocumentEditor {
                         self.layout_info.token_offset_end[t.start] = offset_range.max;
                     }
                 }
-                if self.layout_info.valid && last_visible_token < self.token.len() {
+                if self.layout_info.valid && last_visible_token < last_token_index {
                     // Add the space needed for the non-rendered token at the end
-                    let visible_token_end =
-                        self.layout_info.token_offset_end[last_visible_token - 1];
-                    let last_token_end = self.layout_info.token_offset_end[self.token.len() - 1];
+                    let visible_token_end = self.layout_info.token_offset_end[last_visible_token];
+                    let last_token_end = self.layout_info.token_offset_end[last_token_index];
                     let space = last_token_end - visible_token_end;
 
                     if space > 0.0 {
