@@ -32,38 +32,46 @@ lazy_static! {
     });
 }
 
+fn make_whitespace_visible(v: &String) -> String {
+    v.replace(' ', "␣").replace('\n', "↵")
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct DisplayedToken {
+    value: String,
+    whitespace_before: String,
+    whitespace_after: String,
+}
+
 #[derive(Debug, PartialEq, Eq, Hash)]
 struct Token {
     start: usize,
     end: usize,
     labels: BTreeMap<AnnoKey, String>,
-}
-
-fn make_whitespace_visible(v: &str) -> String {
-    v.replace(' ', "␣").replace('\n', "↵")
+    displayed: DisplayedToken,
 }
 
 impl Token {
-    fn value(&self) -> String {
-        if let Some(v) = &self.labels.get(&TOKEN_KEY) {
-            make_whitespace_visible(v)
-        } else {
-            String::default()
-        }
-    }
-
-    fn whitespace_before(&self) -> String {
-        if let Some(v) = &self.labels.get(&WITESPACE_BEFORE) {
-            make_whitespace_visible(v)
-        } else {
-            String::default()
-        }
-    }
-    fn whitespace_after(&self) -> String {
-        if let Some(v) = &self.labels.get(&WITESPACE_AFTER) {
-            make_whitespace_visible(v)
-        } else {
-            String::default()
+    fn new(start: usize, end: usize, labels: BTreeMap<AnnoKey, String>) -> Self {
+        let displayed = DisplayedToken {
+            value: labels
+                .get(&TOKEN_KEY)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+            whitespace_before: labels
+                .get(&WITESPACE_BEFORE)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+            whitespace_after: labels
+                .get(&WITESPACE_AFTER)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+        };
+        Token {
+            start,
+            end,
+            labels,
+            displayed,
         }
     }
 }
@@ -103,11 +111,7 @@ impl DocumentEditor {
                 for anno in graph.get_node_annos().get_annotations_for_item(node_id)? {
                     labels.insert(anno.key, anno.val.to_string());
                 }
-                let t = Token {
-                    labels,
-                    start: idx,
-                    end: idx,
-                };
+                let t = Token::new(idx, idx, labels);
                 token.push(t);
                 token_to_index.insert(node_id, idx);
             }
@@ -128,11 +132,8 @@ impl DocumentEditor {
                         let start = covered.first().and_then(|t| token_to_index.get(t));
                         let end = covered.last().and_then(|t| token_to_index.get(t));
                         if let (Some(start), Some(end)) = (start, end) {
-                            let t = Token {
-                                labels,
-                                start: *start,
-                                end: *end,
-                            };
+                            let t = Token::new(*start, *end, labels);
+
                             segmentations
                                 .entry(ordering_component.name.to_string())
                                 .or_insert_with(Vec::default)
@@ -171,21 +172,19 @@ impl DocumentEditor {
                     };
                     ui.label(RichText::new(token_range).weak().small())
                 });
-                let whitespace_before = t.whitespace_before();
-                let whitespace_after = t.whitespace_after();
-                let value = t.value();
-                if !value.is_empty()
-                    || !whitespace_before.is_empty()
-                    || !whitespace_after.is_empty()
+                let displayed = &t.displayed;
+                if !displayed.value.is_empty()
+                    || !displayed.whitespace_before.is_empty()
+                    || !displayed.whitespace_after.is_empty()
                 {
                     ui.horizontal(|ui| {
                         // Put the whitespace and the actual value in one line
-                        if !whitespace_before.is_empty() {
-                            ui.label(RichText::new(whitespace_before).weak());
+                        if !t.displayed.whitespace_before.is_empty() {
+                            ui.label(RichText::new(&displayed.whitespace_before).weak());
                         }
-                        ui.label(RichText::new(t.value()).strong());
-                        if !whitespace_after.is_empty() {
-                            ui.label(RichText::new(whitespace_after).weak());
+                        ui.label(RichText::new(&displayed.value).strong());
+                        if !t.displayed.whitespace_after.is_empty() {
+                            ui.label(RichText::new(&displayed.whitespace_after).weak());
                         }
                     });
                 }
@@ -223,7 +222,7 @@ impl Editor for DocumentEditor {
 
         // Remember the location of each token, so we can paint the spans with
         // the same range later
-        let mut token_offset_to_rect = HashMap::new();
+        let mut token_offset_to_rect = vec![None; self.token.len()];
         ScrollArea::horizontal().show_viewport(ui, |ui, visible_rect| {
             if !self.layout_info.valid {
                 ui.scroll_to_cursor(Some(egui::Align::LEFT));
@@ -256,7 +255,7 @@ impl Editor for DocumentEditor {
                     let response = self.show_single_token(t, ui);
                     let token_rect = response.rect;
                     current_span_offset = current_span_offset.max(token_rect.bottom());
-                    token_offset_to_rect.insert(t.start, token_rect);
+                    token_offset_to_rect[t.start] = Some(token_rect);
 
                     if !self.layout_info.valid {
                         let offset_range = token_rect.x_range();
@@ -285,12 +284,12 @@ impl Editor for DocumentEditor {
             ui.vertical(|ui| {
                 for seg_token in self.segmentations.values() {
                     for t in seg_token.iter() {
-                        let span_value = t.value();
+                        let span_value = &t.displayed.value;
 
                         // Get the base token covered by this span and use them to create a rectangle
                         let mut covered_span = Rangef::NOTHING;
                         for offset in t.start..=t.end {
-                            if let Some(token_rect) = token_offset_to_rect.get(&offset) {
+                            if let Some(token_rect) = token_offset_to_rect[offset] {
                                 covered_span.min = covered_span.min.min(token_rect.left());
                                 covered_span.max = covered_span.max.max(token_rect.right());
                             }

@@ -236,8 +236,6 @@ dependencies = [
  "serde",
  "tempfile",
  "uuid",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]
