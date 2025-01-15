@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use super::views::Editor;
+use super::{views::Editor, JobExecutor};
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use egui::{
     mutex::RwLock, Button, Color32, FontId, Label, Pos2, Rangef, Rect, Response, RichText,
     ScrollArea, TextEdit, Ui, Widget,
@@ -14,6 +14,7 @@ use egui::{
 use graphannis::{
     graph::{AnnoKey, NodeID},
     model::AnnotationComponentType,
+    update::{GraphUpdate, UpdateEvent},
     AnnotationGraph,
 };
 use graphannis_core::graph::{ANNIS_NS, NODE_NAME_KEY};
@@ -96,17 +97,20 @@ struct LayoutInfo {
 }
 
 pub(crate) struct DocumentEditor {
+    graph: Arc<RwLock<AnnotationGraph>>,
     token: Vec<Token>,
     selected_node: Option<NodeID>,
     current_edited_value: String,
     segmentations: BTreeMap<String, Vec<Token>>,
     layout_info: LayoutInfo,
+    jobs: JobExecutor,
 }
 
 impl DocumentEditor {
     pub fn create_from_graph(
         selected_corpus_node: NodeID,
         graph: Arc<RwLock<AnnotationGraph>>,
+        jobs: JobExecutor,
     ) -> Result<Self> {
         let mut token = Vec::new();
         let mut segmentations = BTreeMap::new();
@@ -151,6 +155,7 @@ impl DocumentEditor {
         }
         let nr_token = token.len();
         Ok(Self {
+            graph,
             token,
             layout_info: LayoutInfo {
                 valid: false,
@@ -161,6 +166,7 @@ impl DocumentEditor {
             segmentations,
             selected_node: None,
             current_edited_value: String::new(),
+            jobs,
         })
     }
 
@@ -301,9 +307,9 @@ impl Editor for DocumentEditor {
             }
 
             ui.vertical(|ui| {
-                for seg_token in self.segmentations.values() {
-                    for t in seg_token.iter() {
-                        let span_value = &t.displayed.value;
+                for (_, seg_token) in self.segmentations.iter_mut() {
+                    for t in seg_token.iter_mut() {
+                        let span_value = t.displayed.value.clone();
 
                         // Get the base token covered by this span and use them to create a rectangle
                         let mut covered_span = Rangef::NOTHING;
@@ -328,10 +334,65 @@ impl Editor for DocumentEditor {
                                         TextEdit::singleline(&mut self.current_edited_value);
                                     if ui.put(segmentation_rectangle, span_editor).lost_focus() {
                                         // TODO: apply this change
+
                                         self.selected_node = None;
+                                        let new_value = self.current_edited_value.clone();
+                                        let old_value = t.labels.get(&TOKEN_KEY);
+                                        if Some(&new_value) != old_value {
+                                            t.displayed.value = make_whitespace_visible(&new_value);
+                                            t.labels.insert(
+                                                TOKEN_KEY.as_ref().clone(),
+                                                new_value.clone(),
+                                            );
+
+                                            self.layout_info.valid = false;
+                                            let graph = self.graph.clone();
+                                            let node_id = t.node_id;
+                                            self.jobs.add(
+                                                "Applying segmentation value change",
+                                                move |_job| {
+                                                    let graph = graph.read();
+                                                    let node_name = graph
+                                                        .get_node_annos()
+                                                        .get_value_for_item(
+                                                            &node_id,
+                                                            &NODE_NAME_KEY,
+                                                        )?
+                                                        .context("Missing node name")?;
+
+                                                    let mut updates = GraphUpdate::new();
+                                                    updates.add_event(
+                                                        UpdateEvent::DeleteNodeLabel {
+                                                            node_name: node_name.to_string(),
+                                                            anno_ns: TOKEN_KEY.ns.clone().into(),
+                                                            anno_name: TOKEN_KEY
+                                                                .name
+                                                                .clone()
+                                                                .into(),
+                                                        },
+                                                    )?;
+                                                    updates.add_event(
+                                                        UpdateEvent::AddNodeLabel {
+                                                            node_name: node_name.to_string(),
+                                                            anno_ns: TOKEN_KEY.ns.clone().into(),
+                                                            anno_name: TOKEN_KEY
+                                                                .name
+                                                                .clone()
+                                                                .into(),
+                                                            anno_value: new_value,
+                                                        },
+                                                    )?;
+                                                    Ok(updates)
+                                                },
+                                                |update, app| {
+                                                    app.project.add_changeset(update);
+                                                    app.apply_pending_updates();
+                                                },
+                                            );
+                                        }
                                     }
                                 } else {
-                                    let span_button = Button::new(span_value)
+                                    let span_button = Button::new(&span_value)
                                         .wrap_mode(egui::TextWrapMode::Truncate);
                                     if ui.put(segmentation_rectangle, span_button).clicked() {
                                         self.selected_node = Some(t.node_id);
