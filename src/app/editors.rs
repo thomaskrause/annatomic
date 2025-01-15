@@ -4,12 +4,13 @@ use std::{
     sync::Arc,
 };
 
-use super::views::Editor;
+use super::{views::Editor, Notifier};
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
 use egui::{
-    mutex::RwLock, Align2, Color32, FontId, Label, Pos2, Rangef, Rect, Response, RichText,
-    Rounding, ScrollArea, Ui, Widget,
+    mutex::RwLock, Button, Color32, FontId, Label, Pos2, Rangef, Rect, Response, RichText,
+    ScrollArea, Ui, Widget,
 };
+use egui_notify::Toast;
 use graphannis::{
     graph::{AnnoKey, NodeID},
     model::AnnotationComponentType,
@@ -87,12 +88,14 @@ pub(crate) struct DocumentEditor {
     token: Vec<Token>,
     segmentations: BTreeMap<String, Vec<Token>>,
     layout_info: LayoutInfo,
+    notifier: Notifier,
 }
 
 impl DocumentEditor {
     pub fn create_from_graph(
         selected_corpus_node: NodeID,
         graph: Arc<RwLock<AnnotationGraph>>,
+        notifier: Notifier,
     ) -> anyhow::Result<Self> {
         let mut token = Vec::new();
         let mut segmentations = BTreeMap::new();
@@ -153,6 +156,7 @@ impl DocumentEditor {
                 token_offset_end: vec![0.0; nr_token],
             },
             segmentations,
+            notifier,
         })
     }
 
@@ -315,19 +319,22 @@ impl Editor for DocumentEditor {
                             let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
 
                             if ui.is_rect_visible(segmentation_rectangle) {
-                                ui.painter().rect_filled(
-                                    segmentation_rectangle,
-                                    Rounding::ZERO,
-                                    Color32::DARK_GRAY,
-                                );
+                                let span_button =
+                                    Button::new(span_value).wrap_mode(egui::TextWrapMode::Truncate);
+                                if ui.put(segmentation_rectangle, span_button).clicked() {
+                                    self.notifier
+                                        .add_toast(Toast::warning("Not implemented yet"));
+                                }
 
-                                let actual_text_rect = ui.painter().text(
-                                    segmentation_rectangle.center(),
-                                    Align2::CENTER_CENTER,
-                                    span_value,
-                                    FontId::proportional(text_style_body.size),
-                                    Color32::WHITE,
-                                );
+                                let actual_text_rect = ui
+                                    .painter()
+                                    .layout_no_wrap(
+                                        span_value.clone(),
+                                        FontId::proportional(text_style_body.size),
+                                        Color32::BLACK,
+                                    )
+                                    .rect;
+
                                 let span_text_width =
                                     actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
                                 for offset in t.start..=t.end {
@@ -343,7 +350,6 @@ impl Editor for DocumentEditor {
                             }
                         }
                     }
-                    ui.add_space(span_height + ui_style.spacing.item_spacing.y);
                     current_span_offset += span_height + ui_style.spacing.item_spacing.y;
                 }
                 // Add additional space for the scrollbar
