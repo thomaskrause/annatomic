@@ -232,13 +232,12 @@ impl AnnatomicApp {
                         self.current_editor = OnceLock::new();
                         let corpus_cache = self.project.corpus_cache.clone();
                         let location = corpus.location.clone();
-                        let notifier = self.notifier.clone();
                         self.jobs.add(
                             job_title,
                             move |_| {
                                 let graph = corpus_cache.get(&location)?;
                                 let document_editor =
-                                    DocumentEditor::create_from_graph(node_id, graph, notifier)?;
+                                    DocumentEditor::create_from_graph(node_id, graph)?;
 
                                 Ok(document_editor)
                             },

@@ -6,7 +6,7 @@ use graphannis::model::AnnotationComponentType;
 
 use crate::app::set_fonts;
 
-use super::{DocumentEditor, Editor, Notifier};
+use super::{DocumentEditor, Editor};
 
 #[test]
 fn render_token_with_labels() {
@@ -22,10 +22,8 @@ fn render_token_with_labels() {
         .get_node_id_from_name("single_sentence/zossen")
         .unwrap()
         .unwrap();
-    let notifier = Notifier::default();
     let mut editor =
-        DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph)), notifier)
-            .unwrap();
+        DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph))).unwrap();
     let mut harness = Harness::builder().build_ui(move |ui| {
         set_fonts(ui.ctx());
         editor.show(ui);
