@@ -4,7 +4,7 @@ use graphannis::graph::NodeID;
 pub(crate) mod edit;
 pub(crate) mod start;
 
-pub(crate) trait Editor {
+pub(crate) trait Editor: Send {
     fn show(&mut self, ui: &mut Ui);
     fn has_pending_updates(&self) -> bool;
     fn apply_pending_updates(&mut self);
