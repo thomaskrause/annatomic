@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -99,7 +99,8 @@ struct LayoutInfo {
 pub(crate) struct DocumentEditor {
     graph: Arc<RwLock<AnnotationGraph>>,
     token: Vec<Token>,
-    selected_node: Option<NodeID>,
+    selected_nodes: HashSet<NodeID>,
+    currently_edited_node: Option<NodeID>,
     current_edited_value: String,
     segmentations: BTreeMap<String, Vec<Token>>,
     layout_info: LayoutInfo,
@@ -164,7 +165,8 @@ impl DocumentEditor {
                 token_offset_end: vec![0.0; nr_token],
             },
             segmentations,
-            selected_node: None,
+            selected_nodes: HashSet::new(),
+            currently_edited_node: None,
             current_edited_value: String::new(),
             jobs,
         })
@@ -329,13 +331,12 @@ impl Editor for DocumentEditor {
                             let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
 
                             if ui.is_rect_visible(segmentation_rectangle) {
-                                if self.selected_node == Some(t.node_id) {
+                                if self.currently_edited_node == Some(t.node_id) {
                                     let span_editor =
                                         TextEdit::singleline(&mut self.current_edited_value);
                                     if ui.put(segmentation_rectangle, span_editor).lost_focus() {
-                                        // TODO: apply this change
-
-                                        self.selected_node = None;
+                                        self.currently_edited_node = None;
+                                        self.selected_nodes.remove(&t.node_id);
                                         let new_value = self.current_edited_value.clone();
                                         let old_value = t.labels.get(&TOKEN_KEY);
                                         if Some(&new_value) != old_value {
@@ -392,12 +393,28 @@ impl Editor for DocumentEditor {
                                         }
                                     }
                                 } else {
+                                    let button_selected = self.selected_nodes.contains(&t.node_id);
                                     let span_button = Button::new(&span_value)
+                                        .selected(button_selected)
                                         .wrap_mode(egui::TextWrapMode::Truncate);
-                                    if ui.put(segmentation_rectangle, span_button).clicked() {
-                                        self.selected_node = Some(t.node_id);
-                                        self.current_edited_value =
-                                            t.labels.get(&TOKEN_KEY).cloned().unwrap_or_default();
+                                    let span_button = ui.put(segmentation_rectangle, span_button);
+                                    if span_button.clicked_by(egui::PointerButton::Primary) {
+                                        if button_selected {
+                                            // Already selected, allow editing
+                                            self.currently_edited_node = Some(t.node_id);
+                                            self.current_edited_value = t
+                                                .labels
+                                                .get(&TOKEN_KEY)
+                                                .cloned()
+                                                .unwrap_or_default();
+                                        } else {
+                                            // Select first before it can be edited
+                                            self.selected_nodes.insert(t.node_id);
+                                        }
+                                    } else if span_button.clicked_by(egui::PointerButton::Secondary)
+                                    {
+                                        // Right click unselects
+                                        self.selected_nodes.remove(&t.node_id);
                                     }
                                 }
 
