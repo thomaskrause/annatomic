@@ -398,7 +398,7 @@ impl Editor for DocumentEditor {
                                         .selected(button_selected)
                                         .wrap_mode(egui::TextWrapMode::Truncate);
                                     let span_button = ui.put(segmentation_rectangle, span_button);
-                                    if span_button.clicked_by(egui::PointerButton::Primary) {
+                                    if span_button.clicked() {
                                         if button_selected {
                                             // Already selected, allow editing
                                             self.currently_edited_node = Some(t.node_id);
@@ -408,13 +408,13 @@ impl Editor for DocumentEditor {
                                                 .cloned()
                                                 .unwrap_or_default();
                                         } else {
+                                            if !ui.ctx().input(|i| i.modifiers.command) {
+                                                // Select only one item unless Ctrl/Cmd key is down
+                                                self.selected_nodes.clear();
+                                            }
                                             // Select first before it can be edited
                                             self.selected_nodes.insert(t.node_id);
                                         }
-                                    } else if span_button.clicked_by(egui::PointerButton::Secondary)
-                                    {
-                                        // Right click unselects
-                                        self.selected_nodes.remove(&t.node_id);
                                     }
                                 }
 
