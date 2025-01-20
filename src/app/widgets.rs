@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Result;
-use egui::{Label, RichText, Widget};
+use egui::{Frame, Label, RichText, Sense, Widget};
 use graphannis::{
     graph::{AnnoKey, NodeID},
     AnnotationGraph,
@@ -52,6 +52,7 @@ impl Token {
 #[derive(Debug)]
 pub struct TokenEditor<'t> {
     token: &'t Token,
+    selected: bool,
     min_width: Option<f32>,
     value: String,
     whitespace_before: String,
@@ -59,9 +60,10 @@ pub struct TokenEditor<'t> {
 }
 
 impl<'t> TokenEditor<'t> {
-    pub fn new(token: &'t Token, min_width: Option<f32>) -> Self {
+    pub fn new(token: &'t Token, selected: bool, min_width: Option<f32>) -> Self {
         TokenEditor {
             token,
+            selected,
             min_width,
             value: token
                 .labels
@@ -82,9 +84,13 @@ impl<'t> TokenEditor<'t> {
     }
 }
 
-impl<'t> Widget for TokenEditor<'t> {
+impl Widget for TokenEditor<'_> {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let group_response = ui.group(|ui| {
+        let mut g = Frame::group(ui.style());
+        if self.selected {
+            g.fill = ui.style().visuals.selection.bg_fill;
+        }
+        let group_response = g.show(ui, |ui| {
             if let Some(min_width) = self.min_width {
                 ui.set_min_width(min_width);
             }
@@ -135,6 +141,16 @@ impl<'t> Widget for TokenEditor<'t> {
                 }
             });
         });
-        group_response.response
+
+        let response = group_response
+            .response
+            .interact(Sense::click())
+            .interact(Sense::hover());
+
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+
+        response
     }
 }

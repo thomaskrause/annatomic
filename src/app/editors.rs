@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -45,6 +45,7 @@ enum EditorActions {
 pub(crate) struct DocumentEditor {
     graph: Arc<RwLock<AnnotationGraph>>,
     token: Vec<Token>,
+    token_index_by_id: HashMap<NodeID, usize>,
     selected_nodes: HashSet<NodeID>,
     currently_edited_node: Option<NodeID>,
     current_edited_value: String,
@@ -102,9 +103,17 @@ impl DocumentEditor {
             }
         }
         let nr_token = token.len();
+
+        let token_index_by_id = token
+            .iter()
+            .enumerate()
+            .map(|(idx, t)| (t.node_id, idx))
+            .collect();
+
         Ok(Self {
             graph,
             token,
+            token_index_by_id,
             layout_info: LayoutInfo {
                 valid: false,
                 first_frame: true,
@@ -124,7 +133,7 @@ impl DocumentEditor {
     fn show_segmentation_layers(
         &mut self,
         ui: &mut Ui,
-        token_offset_to_rect: &mut Vec<Option<Rect>>,
+        token_offset_to_rect: &mut [Option<Rect>],
         mut current_span_offset: f32,
         span_height: f32,
     ) {
@@ -189,7 +198,7 @@ impl DocumentEditor {
                                     self.current_edited_value =
                                         t.labels.get(&TOKEN_KEY).cloned().unwrap_or_default();
                                 } else {
-                                    if !ui.ctx().input(|i| i.modifiers.command) {
+                                    if !ui.ctx().input(|i| i.modifiers.command_only()) {
                                         // Select only one item unless Ctrl/Cmd key is down
                                         self.selected_nodes.clear();
                                     }
@@ -289,10 +298,51 @@ impl Editor for DocumentEditor {
                     ui.add_space(self.layout_info.token_offset_end[first_visible_token - 1]);
                 }
 
-                for t in &self.token[first_visible_token..=last_visible_token] {
-                    let response =
-                        TokenEditor::new(t, self.layout_info.min_token_width.get(t.start).copied())
-                            .ui(ui);
+                for token_position in first_visible_token..=last_visible_token {
+                    let t = &self.token[token_position];
+                    let response = TokenEditor::new(
+                        t,
+                        self.selected_nodes.contains(&t.node_id),
+                        self.layout_info.min_token_width.get(t.start).copied(),
+                    )
+                    .ui(ui);
+                    if response.clicked() {
+                        if ui.ctx().input(|i| i.modifiers.shift_only()) {
+                            // Mark a range of token, find a suitable token as start for the range first
+                            let mut selected_token_indices: BTreeSet<_> = self
+                                .selected_nodes
+                                .iter()
+                                .filter_map(|selected_node| {
+                                    self.token_index_by_id.get(selected_node)
+                                })
+                                .copied()
+                                .collect();
+                            let after = selected_token_indices.split_off(&token_position);
+
+                            if let Some(after) = after.first() {
+                                for i in token_position..*after {
+                                    self.selected_nodes.insert(self.token[i].node_id);
+                                }
+                            } else if let Some(before) = selected_token_indices.last() {
+                                for i in *before..token_position {
+                                    self.selected_nodes.insert(self.token[i].node_id);
+                                }
+                            }
+                            self.selected_nodes.insert(t.node_id);
+                        } else if ui.ctx().input(|i| i.modifiers.command_only()) {
+                            if self.selected_nodes.contains(&t.node_id) {
+                                // Unselect
+                                self.selected_nodes.remove(&t.node_id);
+                            } else {
+                                // Allow selection of multiple items
+                                self.selected_nodes.insert(t.node_id);
+                            }
+                        } else {
+                            // Select only one node
+                            self.selected_nodes.clear();
+                            self.selected_nodes.insert(t.node_id);
+                        }
+                    }
                     let token_rect = response.rect;
                     current_span_offset = current_span_offset.max(token_rect.bottom());
                     token_offset_to_rect[t.start] = Some(token_rect);
