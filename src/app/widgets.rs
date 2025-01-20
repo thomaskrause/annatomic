@@ -54,17 +54,42 @@ pub struct TokenEditor<'t> {
     token: &'t Token,
     selected: bool,
     min_width: Option<f32>,
+    width: Option<f32>,
     value: String,
     whitespace_before: String,
     whitespace_after: String,
 }
 
 impl<'t> TokenEditor<'t> {
-    pub fn new(token: &'t Token, selected: bool, min_width: Option<f32>) -> Self {
+    pub fn with_exact_width(token: &'t Token, selected: bool, width: Option<f32>) -> Self {
+        TokenEditor {
+            token,
+            selected,
+            min_width: None,
+            width,
+            value: token
+                .labels
+                .get(&TOKEN_KEY)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+            whitespace_before: token
+                .labels
+                .get(&WITESPACE_BEFORE)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+            whitespace_after: token
+                .labels
+                .get(&WITESPACE_AFTER)
+                .map(make_whitespace_visible)
+                .unwrap_or_default(),
+        }
+    }
+    pub fn with_min_width(token: &'t Token, selected: bool, min_width: Option<f32>) -> Self {
         TokenEditor {
             token,
             selected,
             min_width,
+            width: None,
             value: token
                 .labels
                 .get(&TOKEN_KEY)
@@ -91,7 +116,15 @@ impl Widget for TokenEditor<'_> {
             g.fill = ui.style().visuals.selection.bg_fill;
         }
         let group_response = g.show(ui, |ui| {
-            if let Some(min_width) = self.min_width {
+            if let Some(width) = self.width {
+                ui.set_width(
+                    width
+                        - g.inner_margin.left
+                        - g.inner_margin.right
+                        - g.outer_margin.left
+                        - g.outer_margin.right,
+                );
+            } else if let Some(min_width) = self.min_width {
                 ui.set_min_width(min_width);
             }
 

@@ -133,21 +133,13 @@ impl DocumentEditor {
     fn show_segmentation_layers(
         &mut self,
         ui: &mut Ui,
-        token_offset_to_rect: &mut [Option<Rect>],
+        token_offset_to_rect: &[Option<Rect>],
         mut current_span_offset: f32,
-        span_height: f32,
     ) {
         let ui_style = ui.style().clone();
-        let text_style_body = egui::TextStyle::Body.resolve(&ui_style);
         for (_, seg_token) in self.segmentations.iter_mut() {
+            let mut max_node_height = 0.0;
             for t in seg_token.iter_mut() {
-                let span_value_raw = t
-                    .labels
-                    .get(&TOKEN_KEY)
-                    .map(|s| s.as_str())
-                    .unwrap_or_default();
-                let span_value = make_whitespace_visible(span_value_raw);
-
                 // Get the base token covered by this span and use them to create a rectangle
                 let mut covered_span = Rangef::NOTHING;
                 for token_rect in token_offset_to_rect
@@ -161,13 +153,18 @@ impl DocumentEditor {
                 }
                 if covered_span.span() > 0.0 {
                     let min_pos = Pos2::new(covered_span.min, current_span_offset);
-                    let max_pos = Pos2::new(covered_span.max, current_span_offset + span_height);
+                    let max_pos = Pos2::new(covered_span.max, current_span_offset);
                     let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
 
                     if ui.is_rect_visible(segmentation_rectangle) {
                         if self.currently_edited_node == Some(t.node_id) {
-                            let span_editor = TextEdit::singleline(&mut self.current_edited_value);
-                            if ui.put(segmentation_rectangle, span_editor).lost_focus() {
+                            let segmentation_editor =
+                                TextEdit::singleline(&mut self.current_edited_value);
+                            let segmentation_editor =
+                                ui.put(segmentation_rectangle, segmentation_editor);
+                            max_node_height =
+                                segmentation_editor.rect.height().max(max_node_height);
+                            if segmentation_editor.lost_focus() {
                                 self.currently_edited_node = None;
                                 self.selected_nodes.remove(&t.node_id);
                                 let new_value = self.current_edited_value.clone();
@@ -186,13 +183,19 @@ impl DocumentEditor {
                                 }
                             }
                         } else {
-                            let button_selected = self.selected_nodes.contains(&t.node_id);
-                            let span_button = Button::new(&span_value)
-                                .selected(button_selected)
-                                .wrap_mode(egui::TextWrapMode::Truncate);
-                            let span_button = ui.put(segmentation_rectangle, span_button);
-                            if span_button.clicked() {
-                                if button_selected {
+                            let selected = self.selected_nodes.contains(&t.node_id);
+                            let segmentation_editor = TokenEditor::with_exact_width(
+                                t,
+                                selected,
+                                Some(segmentation_rectangle.width()),
+                            );
+
+                            let segmentation_editor =
+                                ui.put(segmentation_rectangle, segmentation_editor);
+                            max_node_height =
+                                segmentation_editor.rect.height().max(max_node_height);
+                            if segmentation_editor.clicked() {
+                                if selected {
                                     // Already selected, allow editing
                                     self.currently_edited_node = Some(t.node_id);
                                     self.current_edited_value =
@@ -206,31 +209,21 @@ impl DocumentEditor {
                                     self.selected_nodes.insert(t.node_id);
                                 }
                             }
-                        }
-
-                        let actual_text_rect = ui
-                            .painter()
-                            .layout_no_wrap(
-                                span_value.clone(),
-                                FontId::proportional(text_style_body.size),
-                                Color32::BLACK,
-                            )
-                            .rect;
-
-                        let span_text_width =
-                            actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
-                        for offset in t.start..=t.end {
-                            if let Some(existing) = self.layout_info.min_token_width.get(offset) {
-                                self.layout_info.min_token_width[offset] =
-                                    existing.max(span_text_width);
-                            } else {
-                                self.layout_info.min_token_width[offset] = span_text_width;
+                            let span_text_width = (segmentation_editor.rect.width()
+                                / ((t.end - t.start) as f32 + 1.0))
+                                + 5.0;
+                            for offset in t.start..=t.end {
+                                if offset < self.layout_info.min_token_width.len()
+                                    && self.layout_info.min_token_width[offset] == 0.0
+                                {
+                                    self.layout_info.min_token_width[offset] = span_text_width;
+                                }
                             }
                         }
                     }
                 }
             }
-            current_span_offset += span_height + ui_style.spacing.item_spacing.y;
+            current_span_offset += max_node_height + ui_style.spacing.item_spacing.y;
         }
     }
 
@@ -251,8 +244,6 @@ impl DocumentEditor {
 impl Editor for DocumentEditor {
     fn show(&mut self, ui: &mut Ui) {
         let ui_style = ui.style().clone();
-        let text_style_body = egui::TextStyle::Body.resolve(&ui_style);
-        let span_height = text_style_body.size * 1.5;
         let mut current_span_offset: f32 = 0.0;
 
         // Remember the location of each token, so we can paint the spans with
@@ -300,7 +291,7 @@ impl Editor for DocumentEditor {
 
                 for token_position in first_visible_token..=last_visible_token {
                     let t = &self.token[token_position];
-                    let response = TokenEditor::new(
+                    let response = TokenEditor::with_min_width(
                         t,
                         self.selected_nodes.contains(&t.node_id),
                         self.layout_info.min_token_width.get(t.start).copied(),
@@ -371,12 +362,7 @@ impl Editor for DocumentEditor {
             }
 
             ui.vertical(|ui| {
-                self.show_segmentation_layers(
-                    ui,
-                    &mut token_offset_to_rect,
-                    current_span_offset,
-                    span_height,
-                )
+                self.show_segmentation_layers(ui, &token_offset_to_rect, current_span_offset)
             });
 
             // Add additional space for the scrollbar
