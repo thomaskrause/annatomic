@@ -338,10 +338,15 @@ impl DocumentEditor {
     }
 
     fn delete_selected_nodes(&mut self) {
+        self.layout_info.valid = false;
+        for (_, segmentation_token) in self.segmentations.iter_mut() {
+            segmentation_token.retain(|t| !self.selected_nodes.contains(&t.node_id));
+        }
         for n in self.selected_nodes.iter() {
             self.pending_actions
                 .push(EditorActions::DeleteNode { node_id: *n });
         }
+        self.selected_nodes.clear();
         self.apply_pending_updates();
     }
 }
