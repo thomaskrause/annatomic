@@ -518,4 +518,17 @@ impl Editor for DocumentEditor {
             self.delete_selected_nodes();
         }
     }
+
+    fn add_edit_menu_entries(&mut self, ui: &mut egui::Ui) {
+        if ui
+            .add_enabled(
+                !self.selected_nodes.is_empty(),
+                Button::new("Delete selected")
+                    .shortcut_text(ui.ctx().format_shortcut(&DELETE_SHORTCUT)),
+            )
+            .clicked()
+        {
+            self.delete_selected_nodes();
+        }
+    }
 }

@@ -392,6 +392,10 @@ impl AnnatomicApp {
                     }
                 });
                 ui.menu_button("Edit", |ui| {
+                    if let Some(editor) = self.current_editor.get_mut() {
+                        editor.add_edit_menu_entries(ui);
+                    }
+
                     if ui
                         .add_enabled(
                             self.project.has_undo(),
