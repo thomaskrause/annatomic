@@ -8,8 +8,8 @@ use super::{views::Editor, JobExecutor};
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
 use anyhow::{Context, Result};
 use egui::{
-    mutex::RwLock, Button, Color32, FontId, Label, Pos2, Rangef, Rect, Response, RichText,
-    ScrollArea, TextEdit, Ui, Widget,
+    mutex::RwLock, Button, Color32, FontId, Key, KeyboardShortcut, Label, Modifiers, Pos2, Rangef,
+    Rect, Response, RichText, ScrollArea, TextEdit, Ui, Widget,
 };
 use graphannis::{
     graph::{AnnoKey, NodeID},
@@ -22,6 +22,8 @@ use lazy_static::lazy_static;
 
 #[cfg(test)]
 mod tests;
+
+const DELETE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Delete);
 
 lazy_static! {
     static ref WITESPACE_BEFORE: Arc<AnnoKey> = Arc::from(AnnoKey {
@@ -96,12 +98,18 @@ struct LayoutInfo {
     token_offset_end: Vec<f32>,
 }
 
+enum EditorActions {
+    ModifySegmentationValue { node_id: NodeID, new_value: String },
+    DeleteNode { node_id: NodeID },
+}
+
 pub(crate) struct DocumentEditor {
     graph: Arc<RwLock<AnnotationGraph>>,
     token: Vec<Token>,
     selected_nodes: HashSet<NodeID>,
     currently_edited_node: Option<NodeID>,
     current_edited_value: String,
+    pending_actions: Vec<EditorActions>,
     segmentations: BTreeMap<String, Vec<Token>>,
     layout_info: LayoutInfo,
     jobs: JobExecutor,
@@ -166,6 +174,7 @@ impl DocumentEditor {
             },
             segmentations,
             selected_nodes: HashSet::new(),
+            pending_actions: Vec::new(),
             currently_edited_node: None,
             current_edited_value: String::new(),
             jobs,
@@ -226,6 +235,114 @@ impl DocumentEditor {
             });
         });
         group_response.response
+    }
+
+    fn show_segmentation_layers(
+        &mut self,
+        ui: &mut Ui,
+        token_offset_to_rect: &mut Vec<Option<Rect>>,
+        mut current_span_offset: f32,
+        span_height: f32,
+    ) {
+        let ui_style = ui.style().clone();
+        let text_style_body = egui::TextStyle::Body.resolve(&ui_style);
+        for (_, seg_token) in self.segmentations.iter_mut() {
+            for t in seg_token.iter_mut() {
+                let span_value = t.displayed.value.clone();
+
+                // Get the base token covered by this span and use them to create a rectangle
+                let mut covered_span = Rangef::NOTHING;
+                for token_rect in token_offset_to_rect
+                    .iter()
+                    .take(t.end + 1)
+                    .skip(t.start)
+                    .flatten()
+                {
+                    covered_span.min = covered_span.min.min(token_rect.left());
+                    covered_span.max = covered_span.max.max(token_rect.right());
+                }
+                if covered_span.span() > 0.0 {
+                    let min_pos = Pos2::new(covered_span.min, current_span_offset);
+                    let max_pos = Pos2::new(covered_span.max, current_span_offset + span_height);
+                    let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
+
+                    if ui.is_rect_visible(segmentation_rectangle) {
+                        if self.currently_edited_node == Some(t.node_id) {
+                            let span_editor = TextEdit::singleline(&mut self.current_edited_value);
+                            if ui.put(segmentation_rectangle, span_editor).lost_focus() {
+                                self.currently_edited_node = None;
+                                self.selected_nodes.remove(&t.node_id);
+                                let new_value = self.current_edited_value.clone();
+                                let old_value = t.labels.get(&TOKEN_KEY);
+                                if Some(&new_value) != old_value {
+                                    t.displayed.value = make_whitespace_visible(&new_value);
+                                    t.labels
+                                        .insert(TOKEN_KEY.as_ref().clone(), new_value.clone());
+
+                                    self.layout_info.valid = false;
+                                    self.pending_actions.push(
+                                        EditorActions::ModifySegmentationValue {
+                                            node_id: t.node_id,
+                                            new_value: new_value.clone(),
+                                        },
+                                    );
+                                }
+                            }
+                        } else {
+                            let button_selected = self.selected_nodes.contains(&t.node_id);
+                            let span_button = Button::new(&span_value)
+                                .selected(button_selected)
+                                .wrap_mode(egui::TextWrapMode::Truncate);
+                            let span_button = ui.put(segmentation_rectangle, span_button);
+                            if span_button.clicked() {
+                                if button_selected {
+                                    // Already selected, allow editing
+                                    self.currently_edited_node = Some(t.node_id);
+                                    self.current_edited_value =
+                                        t.labels.get(&TOKEN_KEY).cloned().unwrap_or_default();
+                                } else {
+                                    if !ui.ctx().input(|i| i.modifiers.command) {
+                                        // Select only one item unless Ctrl/Cmd key is down
+                                        self.selected_nodes.clear();
+                                    }
+                                    // Select first before it can be edited
+                                    self.selected_nodes.insert(t.node_id);
+                                }
+                            }
+                        }
+
+                        let actual_text_rect = ui
+                            .painter()
+                            .layout_no_wrap(
+                                span_value.clone(),
+                                FontId::proportional(text_style_body.size),
+                                Color32::BLACK,
+                            )
+                            .rect;
+
+                        let span_text_width =
+                            actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
+                        for offset in t.start..=t.end {
+                            if let Some(existing) = self.layout_info.min_token_width.get(offset) {
+                                self.layout_info.min_token_width[offset] =
+                                    existing.max(span_text_width);
+                            } else {
+                                self.layout_info.min_token_width[offset] = span_text_width;
+                            }
+                        }
+                    }
+                }
+            }
+            current_span_offset += span_height + ui_style.spacing.item_spacing.y;
+        }
+    }
+
+    fn delete_selected_nodes(&mut self) {
+        for n in self.selected_nodes.iter() {
+            self.pending_actions
+                .push(EditorActions::DeleteNode { node_id: *n });
+        }
+        self.apply_pending_updates();
     }
 }
 
@@ -309,157 +426,91 @@ impl Editor for DocumentEditor {
             }
 
             ui.vertical(|ui| {
-                for (_, seg_token) in self.segmentations.iter_mut() {
-                    for t in seg_token.iter_mut() {
-                        let span_value = t.displayed.value.clone();
-
-                        // Get the base token covered by this span and use them to create a rectangle
-                        let mut covered_span = Rangef::NOTHING;
-                        for token_rect in token_offset_to_rect
-                            .iter()
-                            .take(t.end + 1)
-                            .skip(t.start)
-                            .flatten()
-                        {
-                            covered_span.min = covered_span.min.min(token_rect.left());
-                            covered_span.max = covered_span.max.max(token_rect.right());
-                        }
-                        if covered_span.span() > 0.0 {
-                            let min_pos = Pos2::new(covered_span.min, current_span_offset);
-                            let max_pos =
-                                Pos2::new(covered_span.max, current_span_offset + span_height);
-                            let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
-
-                            if ui.is_rect_visible(segmentation_rectangle) {
-                                if self.currently_edited_node == Some(t.node_id) {
-                                    let span_editor =
-                                        TextEdit::singleline(&mut self.current_edited_value);
-                                    if ui.put(segmentation_rectangle, span_editor).lost_focus() {
-                                        self.currently_edited_node = None;
-                                        self.selected_nodes.remove(&t.node_id);
-                                        let new_value = self.current_edited_value.clone();
-                                        let old_value = t.labels.get(&TOKEN_KEY);
-                                        if Some(&new_value) != old_value {
-                                            t.displayed.value = make_whitespace_visible(&new_value);
-                                            t.labels.insert(
-                                                TOKEN_KEY.as_ref().clone(),
-                                                new_value.clone(),
-                                            );
-
-                                            self.layout_info.valid = false;
-                                            let graph = self.graph.clone();
-                                            let node_id = t.node_id;
-                                            self.jobs.add(
-                                                "Applying segmentation value change",
-                                                move |_job| {
-                                                    let graph = graph.read();
-                                                    let node_name = graph
-                                                        .get_node_annos()
-                                                        .get_value_for_item(
-                                                            &node_id,
-                                                            &NODE_NAME_KEY,
-                                                        )?
-                                                        .context("Missing node name")?;
-
-                                                    let mut updates = GraphUpdate::new();
-                                                    updates.add_event(
-                                                        UpdateEvent::DeleteNodeLabel {
-                                                            node_name: node_name.to_string(),
-                                                            anno_ns: TOKEN_KEY.ns.clone().into(),
-                                                            anno_name: TOKEN_KEY
-                                                                .name
-                                                                .clone()
-                                                                .into(),
-                                                        },
-                                                    )?;
-                                                    updates.add_event(
-                                                        UpdateEvent::AddNodeLabel {
-                                                            node_name: node_name.to_string(),
-                                                            anno_ns: TOKEN_KEY.ns.clone().into(),
-                                                            anno_name: TOKEN_KEY
-                                                                .name
-                                                                .clone()
-                                                                .into(),
-                                                            anno_value: new_value,
-                                                        },
-                                                    )?;
-                                                    Ok(updates)
-                                                },
-                                                |update, app| {
-                                                    app.project.add_changeset(update);
-                                                    app.apply_pending_updates();
-                                                },
-                                            );
-                                        }
-                                    }
-                                } else {
-                                    let button_selected = self.selected_nodes.contains(&t.node_id);
-                                    let span_button = Button::new(&span_value)
-                                        .selected(button_selected)
-                                        .wrap_mode(egui::TextWrapMode::Truncate);
-                                    let span_button = ui.put(segmentation_rectangle, span_button);
-                                    if span_button.clicked() {
-                                        if button_selected {
-                                            // Already selected, allow editing
-                                            self.currently_edited_node = Some(t.node_id);
-                                            self.current_edited_value = t
-                                                .labels
-                                                .get(&TOKEN_KEY)
-                                                .cloned()
-                                                .unwrap_or_default();
-                                        } else {
-                                            if !ui.ctx().input(|i| i.modifiers.command) {
-                                                // Select only one item unless Ctrl/Cmd key is down
-                                                self.selected_nodes.clear();
-                                            }
-                                            // Select first before it can be edited
-                                            self.selected_nodes.insert(t.node_id);
-                                        }
-                                    }
-                                }
-
-                                let actual_text_rect = ui
-                                    .painter()
-                                    .layout_no_wrap(
-                                        span_value.clone(),
-                                        FontId::proportional(text_style_body.size),
-                                        Color32::BLACK,
-                                    )
-                                    .rect;
-
-                                let span_text_width =
-                                    actual_text_rect.width() / ((t.end - t.start) as f32 + 1.0);
-                                for offset in t.start..=t.end {
-                                    if let Some(existing) =
-                                        self.layout_info.min_token_width.get(offset)
-                                    {
-                                        self.layout_info.min_token_width[offset] =
-                                            existing.max(span_text_width);
-                                    } else {
-                                        self.layout_info.min_token_width[offset] = span_text_width;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    current_span_offset += span_height + ui_style.spacing.item_spacing.y;
-                }
-                // Add additional space for the scrollbar
-                ui.add_space(10.0);
+                self.show_segmentation_layers(
+                    ui,
+                    &mut token_offset_to_rect,
+                    current_span_offset,
+                    span_height,
+                )
             });
+
+            // Add additional space for the scrollbar
+            ui.add_space(10.0);
+
             if visible_range.start == 0.0 && !self.layout_info.min_token_width.is_empty() {
                 self.layout_info.valid = true;
             }
+            self.apply_pending_updates();
         });
     }
 
     fn has_pending_updates(&self) -> bool {
-        false
+        !self.pending_actions.is_empty()
     }
 
-    fn apply_pending_updates(&mut self) {}
+    fn apply_pending_updates(&mut self) {
+        if !self.has_pending_updates() {
+            return;
+        }
+        let graph = self.graph.clone();
+        let pending_actions = std::mem::take(&mut self.pending_actions);
+        self.jobs.add(
+            "Applying segmentation value change",
+            move |_job| {
+                let mut updates = GraphUpdate::new();
+                let graph = graph.read();
+
+                for action in pending_actions {
+                    match action {
+                        EditorActions::ModifySegmentationValue { node_id, new_value } => {
+                            let node_name = graph
+                                .get_node_annos()
+                                .get_value_for_item(&node_id, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+
+                            updates.add_event(UpdateEvent::DeleteNodeLabel {
+                                node_name: node_name.to_string(),
+                                anno_ns: TOKEN_KEY.ns.clone().into(),
+                                anno_name: TOKEN_KEY.name.clone().into(),
+                            })?;
+                            updates.add_event(UpdateEvent::AddNodeLabel {
+                                node_name: node_name.to_string(),
+                                anno_ns: TOKEN_KEY.ns.clone().into(),
+                                anno_name: TOKEN_KEY.name.clone().into(),
+                                anno_value: new_value,
+                            })?;
+                        }
+                        EditorActions::DeleteNode { node_id } => {
+                            let node_name = graph
+                                .get_node_annos()
+                                .get_value_for_item(&node_id, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+                            updates.add_event(UpdateEvent::DeleteNode {
+                                node_name: node_name.to_string(),
+                            })?;
+                        }
+                    }
+                }
+
+                Ok(updates)
+            },
+            |update, app| {
+                app.project.add_changeset(update);
+                app.apply_pending_updates();
+            },
+        );
+    }
 
     fn get_selected_corpus_node(&self) -> Option<NodeID> {
         None
+    }
+
+    fn consume_shortcuts(&mut self, ctx: &egui::Context) {
+        if !self.selected_nodes.is_empty()
+            && self.currently_edited_node.is_none()
+            && ctx.input_mut(|i| i.consume_shortcut(&DELETE_SHORTCUT))
+        {
+            self.delete_selected_nodes();
+        }
     }
 }

@@ -9,4 +9,6 @@ pub(crate) trait Editor: Send {
     fn has_pending_updates(&self) -> bool;
     fn apply_pending_updates(&mut self);
     fn get_selected_corpus_node(&self) -> Option<NodeID>;
+
+    fn consume_shortcuts(&mut self, _ctx: &egui::Context) {}
 }

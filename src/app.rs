@@ -307,6 +307,12 @@ impl AnnatomicApp {
     }
 
     fn consume_shortcuts(&mut self, ctx: &egui::Context) {
+        // Consume any potential context sensitve shortcuts from the editor
+        if let Some(editor) = self.current_editor.get_mut() {
+            editor.consume_shortcuts(ctx);
+        }
+
+        // Consume all shortcuts from the application itself, which can be active at any time
         if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
