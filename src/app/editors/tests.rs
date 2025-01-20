@@ -90,6 +90,10 @@ fn change_segmentation_value() {
         editor.show(ui);
     });
     harness.set_size(Vec2::new(900.0, 120.0));
+    // First click is selection
+    harness.get_by_label("subtokenized").click();
+    harness.run();
+    // Second click to activate editing
     harness.get_by_label("subtokenized").click();
     harness.run();
     get_text_input(&harness, "subtokenized").type_text("t");
