@@ -22,6 +22,7 @@ mod project;
 mod tests;
 pub(crate) mod util;
 mod views;
+pub(crate) mod widgets;
 
 pub(crate) const APP_ID: &str = "annatomic";
 pub const QUIT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);

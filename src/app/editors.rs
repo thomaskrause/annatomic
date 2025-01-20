@@ -4,95 +4,34 @@ use std::{
     sync::Arc,
 };
 
-use super::{views::Editor, JobExecutor};
+use super::{
+    util::make_whitespace_visible,
+    views::Editor,
+    widgets::{Token, TokenEditor},
+    JobExecutor,
+};
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
 use anyhow::{Context, Result};
 use egui::{
-    mutex::RwLock, Button, Color32, FontId, Key, KeyboardShortcut, Label, Modifiers, Pos2, Rangef,
-    Rect, Response, RichText, ScrollArea, TextEdit, Ui, Widget,
+    mutex::RwLock, Button, Color32, FontId, Key, KeyboardShortcut, Modifiers, Pos2, Rangef, Rect,
+    ScrollArea, TextEdit, Ui, Widget,
 };
 use graphannis::{
-    graph::{AnnoKey, NodeID},
+    graph::NodeID,
     model::AnnotationComponentType,
     update::{GraphUpdate, UpdateEvent},
     AnnotationGraph,
 };
 use graphannis_core::graph::{ANNIS_NS, NODE_NAME_KEY};
-use lazy_static::lazy_static;
 
 #[cfg(test)]
 mod tests;
 
 const DELETE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Delete);
 
-lazy_static! {
-    static ref WITESPACE_BEFORE: Arc<AnnoKey> = Arc::from(AnnoKey {
-        ns: ANNIS_NS.into(),
-        name: "tok-whitespace-before".into(),
-    });
-    static ref WITESPACE_AFTER: Arc<AnnoKey> = Arc::from(AnnoKey {
-        ns: ANNIS_NS.into(),
-        name: "tok-whitespace-after".into(),
-    });
-}
-
-fn make_whitespace_visible<S: AsRef<str>>(v: &S) -> String {
-    v.as_ref().replace(' ', "␣").replace('\n', "↵")
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct DisplayedToken {
-    value: String,
-    whitespace_before: String,
-    whitespace_after: String,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
-struct Token {
-    node_id: NodeID,
-    start: usize,
-    end: usize,
-    labels: BTreeMap<AnnoKey, String>,
-    displayed: DisplayedToken,
-}
-
-impl Token {
-    fn from_graph(
-        node_id: NodeID,
-        start: usize,
-        end: usize,
-        graph: &AnnotationGraph,
-    ) -> Result<Self> {
-        let mut labels = BTreeMap::new();
-        for anno in graph.get_node_annos().get_annotations_for_item(&node_id)? {
-            labels.insert(anno.key, anno.val.to_string());
-        }
-        let displayed = DisplayedToken {
-            value: labels
-                .get(&TOKEN_KEY)
-                .map(make_whitespace_visible)
-                .unwrap_or_default(),
-            whitespace_before: labels
-                .get(&WITESPACE_BEFORE)
-                .map(make_whitespace_visible)
-                .unwrap_or_default(),
-            whitespace_after: labels
-                .get(&WITESPACE_AFTER)
-                .map(make_whitespace_visible)
-                .unwrap_or_default(),
-        };
-        Ok(Token {
-            node_id,
-            start,
-            end,
-            labels,
-            displayed,
-        })
-    }
-}
-
 struct LayoutInfo {
     valid: bool,
+    first_frame: bool,
     min_token_width: Vec<f32>,
     token_offset_start: Vec<f32>,
     token_offset_end: Vec<f32>,
@@ -168,6 +107,7 @@ impl DocumentEditor {
             token,
             layout_info: LayoutInfo {
                 valid: false,
+                first_frame: true,
                 min_token_width: Vec::new(),
                 token_offset_start: vec![0.0; nr_token],
                 token_offset_end: vec![0.0; nr_token],
@@ -181,62 +121,6 @@ impl DocumentEditor {
         })
     }
 
-    fn show_single_token(&self, t: &Token, ui: &mut Ui) -> Response {
-        let group_response = ui.group(|ui| {
-            if let Some(min_width) = self.layout_info.min_token_width.get(t.start) {
-                ui.set_min_width(*min_width);
-            }
-
-            ui.vertical(|ui| {
-                // Add the token information as first line
-                ui.horizontal(|ui| {
-                    let token_range = if t.start == t.end {
-                        t.start.to_string()
-                    } else {
-                        format!("{}-{}", t.start, t.end)
-                    };
-                    ui.label(RichText::new(token_range).weak().small())
-                });
-                let displayed = &t.displayed;
-                if !displayed.value.is_empty()
-                    || !displayed.whitespace_before.is_empty()
-                    || !displayed.whitespace_after.is_empty()
-                {
-                    ui.horizontal(|ui| {
-                        // Put the whitespace and the actual value in one line
-                        if !t.displayed.whitespace_before.is_empty() {
-                            ui.label(RichText::new(&displayed.whitespace_before).weak());
-                        }
-                        ui.label(RichText::new(&displayed.value).strong());
-                        if !t.displayed.whitespace_after.is_empty() {
-                            ui.label(RichText::new(&displayed.whitespace_after).weak());
-                        }
-                    });
-                }
-                // Show all other labels
-                for (key, value) in t.labels.iter() {
-                    if key.ns != ANNIS_NS {
-                        let key_label = if key.ns.is_empty() {
-                            key.name.to_string()
-                        } else {
-                            format!("{}:{}", key.ns, key.name)
-                        };
-
-                        ui.horizontal(|ui| {
-                            Label::new(value)
-                                .wrap_mode(egui::TextWrapMode::Extend)
-                                .ui(ui);
-                            Label::new(RichText::new(key_label).weak().small_raised())
-                                .wrap_mode(egui::TextWrapMode::Extend)
-                                .ui(ui);
-                        });
-                    }
-                }
-            });
-        });
-        group_response.response
-    }
-
     fn show_segmentation_layers(
         &mut self,
         ui: &mut Ui,
@@ -248,7 +132,12 @@ impl DocumentEditor {
         let text_style_body = egui::TextStyle::Body.resolve(&ui_style);
         for (_, seg_token) in self.segmentations.iter_mut() {
             for t in seg_token.iter_mut() {
-                let span_value = t.displayed.value.clone();
+                let span_value_raw = t
+                    .labels
+                    .get(&TOKEN_KEY)
+                    .map(|s| s.as_str())
+                    .unwrap_or_default();
+                let span_value = make_whitespace_visible(span_value_raw);
 
                 // Get the base token covered by this span and use them to create a rectangle
                 let mut covered_span = Rangef::NOTHING;
@@ -275,7 +164,6 @@ impl DocumentEditor {
                                 let new_value = self.current_edited_value.clone();
                                 let old_value = t.labels.get(&TOKEN_KEY);
                                 if Some(&new_value) != old_value {
-                                    t.displayed.value = make_whitespace_visible(&new_value);
                                     t.labels
                                         .insert(TOKEN_KEY.as_ref().clone(), new_value.clone());
 
@@ -362,7 +250,7 @@ impl Editor for DocumentEditor {
         // the same range later
         let mut token_offset_to_rect = vec![None; self.token.len()];
         ScrollArea::horizontal().show_viewport(ui, |ui, visible_rect| {
-            if !self.layout_info.valid {
+            if self.layout_info.first_frame {
                 ui.scroll_to_cursor(Some(egui::Align::LEFT));
             }
             // If we already calculated the token positions once, only render
@@ -402,7 +290,9 @@ impl Editor for DocumentEditor {
                 }
 
                 for t in &self.token[first_visible_token..=last_visible_token] {
-                    let response = self.show_single_token(t, ui);
+                    let response =
+                        TokenEditor::new(t, self.layout_info.min_token_width.get(t.start).copied())
+                            .ui(ui);
                     let token_rect = response.rect;
                     current_span_offset = current_span_offset.max(token_rect.bottom());
                     token_offset_to_rect[t.start] = Some(token_rect);
@@ -447,6 +337,8 @@ impl Editor for DocumentEditor {
             }
             self.apply_pending_updates();
         });
+
+        self.layout_info.first_frame = false;
     }
 
     fn has_pending_updates(&self) -> bool {
