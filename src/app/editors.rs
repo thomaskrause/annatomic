@@ -5,7 +5,6 @@ use std::{
 };
 
 use super::{
-    util::make_whitespace_visible,
     views::Editor,
     widgets::{Token, TokenEditor},
     JobExecutor,
@@ -13,8 +12,8 @@ use super::{
 use crate::app::util::token_helper::{TokenHelper, TOKEN_KEY};
 use anyhow::{Context, Result};
 use egui::{
-    mutex::RwLock, Button, Color32, FontId, Key, KeyboardShortcut, Modifiers, Pos2, Rangef, Rect,
-    ScrollArea, TextEdit, Ui, Widget,
+    mutex::RwLock, Button, Key, KeyboardShortcut, Modifiers, Pos2, Rangef, Rect, ScrollArea,
+    TextEdit, Ui, Widget,
 };
 use graphannis::{
     graph::NodeID,
@@ -29,6 +28,7 @@ mod tests;
 
 const DELETE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::Delete);
 
+#[derive(Clone)]
 struct LayoutInfo {
     valid: bool,
     first_frame: bool,
@@ -37,11 +37,13 @@ struct LayoutInfo {
     token_offset_end: Vec<f32>,
 }
 
+#[derive(Clone)]
 enum EditorActions {
     ModifySegmentationValue { node_id: NodeID, new_value: String },
     DeleteNode { node_id: NodeID },
 }
 
+#[derive(Clone)]
 pub(crate) struct DocumentEditor {
     graph: Arc<RwLock<AnnotationGraph>>,
     token: Vec<Token>,

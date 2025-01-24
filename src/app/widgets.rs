@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Result;
-use egui::{Frame, Label, RichText, Sense, Widget};
+use egui::{Frame, Label, RichText, Sense, Widget, WidgetInfo};
 use graphannis::{
     graph::{AnnoKey, NodeID},
     AnnotationGraph,
@@ -22,7 +22,7 @@ lazy_static! {
     });
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Token {
     pub node_id: NodeID,
     pub start: usize,
@@ -179,6 +179,20 @@ impl Widget for TokenEditor<'_> {
             .response
             .interact(Sense::click())
             .interact(Sense::hover());
+        let widget_label = if self.selected {
+            format!(
+                "Selected token ranging from {} to {} with label \"{}\"",
+                self.token.start, self.token.end, self.value
+            )
+        } else {
+            format!(
+                "Token ranging from {} to {} with label \"{}\"",
+                self.token.start, self.token.end, self.value
+            )
+        };
+        response.widget_info(move || {
+            WidgetInfo::labeled(egui::WidgetType::Other, true, widget_label.clone())
+        });
 
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

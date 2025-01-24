@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use egui::{accesskit::Role, mutex::RwLock, Vec2};
 use egui_kittest::{
     kittest::{Key, Node, Queryable},
@@ -61,7 +62,7 @@ fn render_segmentation_spans() {
         set_fonts(ui.ctx());
         editor.show(ui);
     });
-    harness.set_size(Vec2::new(900.0, 120.0));
+    harness.set_size(Vec2::new(2100.0, 210.0));
     harness.run();
 
     harness.wgpu_snapshot("render_segmentation_spans");
@@ -82,20 +83,32 @@ fn change_segmentation_value() {
         .unwrap()
         .unwrap();
     let job = JobExecutor::default();
-    let mut editor =
+    let editor =
         DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph)), job.clone())
             .unwrap();
+    let editor = Arc::new(RwLock::new(editor));
+    let editor_for_closure = editor.clone();
     let mut harness = Harness::builder().build_ui(move |ui| {
         set_fonts(ui.ctx());
+        let mut editor = editor_for_closure.write();
         editor.show(ui);
     });
-    harness.set_size(Vec2::new(900.0, 120.0));
+    harness.set_size(Vec2::new(2100.0, 210.0));
+    harness.run();
+    // No node should be selected
+    assert_eq!(0, editor.read().selected_nodes.len());
     // First click is selection
-    harness.get_by_label("subtokenized").click();
+    harness
+        .get_by_label_contains("Token ranging from 7 to 8")
+        .click();
     harness.run();
+    assert_eq!(1, editor.read().selected_nodes.len());
     // Second click to activate editing
-    harness.get_by_label("subtokenized").click();
+    harness
+        .get_by_label_contains("Selected token ranging from 7 to 8")
+        .click();
     harness.run();
+
     get_text_input(&harness, "subtokenized").type_text("t");
     harness.run();
     get_text_input(&harness, "subtokenizedt").key_press(Key::Enter);
@@ -109,5 +122,6 @@ fn get_text_input<'a>(harness: &'a Harness<'_>, value: &'a str) -> Node<'a> {
         .get_all_by_value(value)
         .filter(|n| n.role() == Role::TextInput)
         .next()
+        .context(format!("Missing text input with value \"{value}\""))
         .unwrap()
 }
