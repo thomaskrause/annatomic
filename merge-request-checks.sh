@@ -8,8 +8,11 @@ cargo fmt --check
 cargo clippy
 
 # Execute tests and calculate the code coverage both as lcov and HTML report
-cargo llvm-cov --no-cfg-coverage --all-features --ignore-filename-regex 'tests?\.rs' --lcov --output-path annatomic.lcov
+rm -f target/llvm-cov/tests.lcov
+mkdir -p target/llvm-cov/
+cargo llvm-cov --no-cfg-coverage --all-features --ignore-filename-regex 'tests?\.rs' --lcov --output-path target/llvm-cov/tests.lcov
 
 # Use diff-cover (https://github.com/Bachmann1234/diff_cover) and output code coverage compared to main branch
-diff-cover annatomic.lcov --html-report target/llvm-cov/html/patch.html
+mkdir -p target/llvm-cov/html/
+diff-cover target/llvm-cov/tests.lcov --html-report target/llvm-cov/html/patch.html
 echo "HTML report available at $PWD/target/llvm-cov/html/patch.html"
