@@ -8,78 +8,23 @@ use egui_kittest::{
 };
 use graphannis::model::AnnotationComponentType;
 
-use crate::app::set_fonts;
+use crate::{app::set_fonts, assert_screenshots};
 
 use super::{DocumentEditor, Editor, JobExecutor};
 
-#[test]
-fn render_token_with_labels() {
-    let (graph, _config) =
-        graphannis_core::graph::serialization::graphml::import::<AnnotationComponentType, _, _>(
-            &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
-            false,
-            |_| {},
-        )
-        .unwrap();
+fn create_example_ui(
+    graphml: &[u8],
+    document_node: &str,
+) -> (Harness<'static>, Arc<RwLock<DocumentEditor>>) {
+    let (graph, _config) = graphannis_core::graph::serialization::graphml::import::<
+        AnnotationComponentType,
+        _,
+        _,
+    >(graphml, false, |_| {})
+    .unwrap();
     let document_node = graph
         .get_node_annos()
-        .get_node_id_from_name("single_sentence/zossen")
-        .unwrap()
-        .unwrap();
-    let job = JobExecutor::default();
-    let mut editor =
-        DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph)), job)
-            .unwrap();
-    let mut harness = Harness::builder().build_ui(move |ui| {
-        set_fonts(ui.ctx());
-        editor.show(ui);
-    });
-    harness.fit_contents();
-    harness.run();
-
-    harness.wgpu_snapshot("render_token_with_labels");
-}
-
-#[test]
-fn render_segmentation_spans() {
-    let (graph, _config) =
-        graphannis_core::graph::serialization::graphml::import::<AnnotationComponentType, _, _>(
-            &include_bytes!("../../../tests/data/SegmentationWithGaps.graphml")[..],
-            false,
-            |_| {},
-        )
-        .unwrap();
-    let document_node = graph
-        .get_node_annos()
-        .get_node_id_from_name("SegmentationWithGaps/doc01")
-        .unwrap()
-        .unwrap();
-    let job = JobExecutor::default();
-    let mut editor =
-        DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph)), job)
-            .unwrap();
-    let mut harness = Harness::builder().build_ui(move |ui| {
-        set_fonts(ui.ctx());
-        editor.show(ui);
-    });
-    harness.set_size(Vec2::new(2100.0, 210.0));
-    harness.run();
-
-    harness.wgpu_snapshot("render_segmentation_spans");
-}
-
-#[test]
-fn change_segmentation_value() {
-    let (graph, _config) =
-        graphannis_core::graph::serialization::graphml::import::<AnnotationComponentType, _, _>(
-            &include_bytes!("../../../tests/data/SegmentationWithGaps.graphml")[..],
-            false,
-            |_| {},
-        )
-        .unwrap();
-    let document_node = graph
-        .get_node_annos()
-        .get_node_id_from_name("SegmentationWithGaps/doc01")
+        .get_node_id_from_name(document_node)
         .unwrap()
         .unwrap();
     let job = JobExecutor::default();
@@ -93,6 +38,62 @@ fn change_segmentation_value() {
         let mut editor = editor_for_closure.write();
         editor.show(ui);
     });
+    harness.fit_contents();
+
+    (harness, editor)
+}
+
+#[test]
+fn render_token_with_labels() {
+    let (mut harness, _) = create_example_ui(
+        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+        "single_sentence/zossen",
+    );
+    harness.run();
+    harness.wgpu_snapshot("render_token_with_labels");
+}
+
+#[test]
+fn select_token_range() {
+    let (mut harness, editor) = create_example_ui(
+        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+        "single_sentence/zossen",
+    );
+    harness
+        .get_by_label_contains("Token ranging from 1 to 1")
+        .click();
+    harness.run();
+    assert_eq!(1, editor.read().selected_nodes.len());
+    let r1 = harness.try_wgpu_snapshot("select_token_range_first_token");
+
+    // Emulate pressing and holding the shift key
+    editor.write().select_range(5);
+    harness.run();
+    assert_eq!(5, editor.read().selected_nodes.len());
+
+    let r2 = harness.try_wgpu_snapshot("select_token_range");
+
+    assert_screenshots![r1, r2];
+}
+
+#[test]
+fn render_segmentation_spans() {
+    let (mut harness, _) = create_example_ui(
+        &include_bytes!("../../../tests/data/SegmentationWithGaps.graphml")[..],
+        "SegmentationWithGaps/doc01",
+    );
+    harness.set_size(Vec2::new(2100.0, 210.0));
+    harness.run();
+
+    harness.wgpu_snapshot("render_segmentation_spans");
+}
+
+#[test]
+fn change_segmentation_value() {
+    let (mut harness, editor) = create_example_ui(
+        &include_bytes!("../../../tests/data/SegmentationWithGaps.graphml")[..],
+        "SegmentationWithGaps/doc01",
+    );
     harness.set_size(Vec2::new(2100.0, 210.0));
     harness.run();
     // No node should be selected
