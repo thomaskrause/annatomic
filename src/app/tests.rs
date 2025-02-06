@@ -65,7 +65,7 @@ pub(crate) fn wait_for_editor(
         }
     }
 
-    harness.run();
+    harness.run_steps(10);
 }
 
 pub(crate) fn focus_and_wait(harness: &mut Harness<'static>, id: Id) {
@@ -76,7 +76,7 @@ pub(crate) fn focus_and_wait(harness: &mut Harness<'static>, id: Id) {
             break;
         }
     }
-    harness.run();
+    harness.step();
 }
 
 pub(crate) fn wait_for_editor_vanished(
@@ -91,7 +91,7 @@ pub(crate) fn wait_for_editor_vanished(
         }
     }
 
-    harness.run();
+    harness.run_steps(10);
 }
 
 pub(crate) fn wait_until_jobs_finished(
