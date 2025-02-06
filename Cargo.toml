@@ -11,15 +11,15 @@ all-features = true
 targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 
 [dependencies]
-eframe = { version = "0.30", default-features = false, features = [
+eframe = { version = "0.31", default-features = false, features = [
   "accesskit",   # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
   "glow",        # Use the glow rendering backend. Alternative: "wgpu".
   "persistence", # Enable restoring app state when restarting the app.
   "wayland",
   "x11",
 ] }
-egui = "0.30"
-egui_extras = { version = "0.30", features = ["image"] }
+egui = "0.31"
+egui_extras = { version = "0.31", features = ["image"] }
 log = "0.4"
 
 # You only need serde if you want app persistence:
@@ -39,7 +39,7 @@ env_logger = "0.11"
 
 
 [dev-dependencies]
-egui_kittest = { version = "0.30.0", features = ["wgpu", "snapshot"] }
+egui_kittest = { version = "0.31.0", features = ["wgpu", "snapshot"] }
 insta = "1.41.1"
 pretty_assertions = "1.4.1"
 tempfile = "3.15.0"
@@ -47,6 +47,8 @@ tempfile = "3.15.0"
 [patch.crates-io]
 graphannis = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
 graphannis-core = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
+egui-phosphor = { git = "https://github.com/bircni/egui-phosphor", branch = "patch/egui-version" }
+egui-notify = { git = "https://github.com/bircni/egui-notify.git", branch = "patch/egui-version" }
 
 # Compile some of the dependencies in release mode if when we are ourself in
 # "dev" mode (like building debug binaries or running tests)
