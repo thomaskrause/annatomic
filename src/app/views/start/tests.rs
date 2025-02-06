@@ -48,17 +48,14 @@ fn create_new_corpus() {
     inputs[0].type_text("example");
     harness.get_by_label("Add").click();
 
-    for i in 0..10_000 {
+    for i in 0..120 {
         harness.step();
         let app_state = app_state.read();
         if i > 10 && app_state.current_editor.get().is_some() && app_state.notifier.is_empty() {
             break;
         }
     }
-    // Add some runs, so that the toasts have time to disappear
-    for _ in 0..20 {
-        harness.step();
-    }
+    harness.run();
 
     {
         let app_state = app_state.read();

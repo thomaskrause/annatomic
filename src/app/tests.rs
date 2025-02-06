@@ -7,7 +7,8 @@ use tempfile::TempDir;
 
 use super::*;
 
-const MAX_WAIT_STEPS: usize = 10_000;
+/// 30 Seconds, since th tests are run with 4fps
+const MAX_WAIT_STEPS: usize = 120;
 
 pub(crate) fn create_app_with_corpus<R: Read, S: Into<String>>(
     corpus_name: S,
@@ -64,9 +65,7 @@ pub(crate) fn wait_for_editor(
         }
     }
 
-    for _ in 0..10 {
-        harness.step();
-    }
+    harness.run();
 }
 
 pub(crate) fn focus_and_wait(harness: &mut Harness<'static>, id: Id) {
@@ -77,7 +76,7 @@ pub(crate) fn focus_and_wait(harness: &mut Harness<'static>, id: Id) {
             break;
         }
     }
-    harness.step();
+    harness.run();
 }
 
 pub(crate) fn wait_for_editor_vanished(
@@ -92,9 +91,7 @@ pub(crate) fn wait_for_editor_vanished(
         }
     }
 
-    for _ in 0..10 {
-        harness.step();
-    }
+    harness.run();
 }
 
 pub(crate) fn wait_until_jobs_finished(
