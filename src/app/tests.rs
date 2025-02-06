@@ -48,6 +48,7 @@ pub(crate) fn create_test_harness(
 
     let harness = Harness::builder()
         .with_size(egui::Vec2::new(800.0, 600.0))
+        .with_max_steps(24)
         .build(app);
 
     (harness, result_app_state.clone())
