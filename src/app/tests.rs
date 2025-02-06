@@ -141,5 +141,5 @@ fn show_main_page() {
     let (mut harness, _) = create_test_harness(app_state);
     harness.run();
 
-    harness.wgpu_snapshot("show_main_page");
+    harness.snapshot("show_main_page");
 }

@@ -36,7 +36,7 @@ fn render_token_with_labels() {
     harness.fit_contents();
     harness.run();
 
-    harness.wgpu_snapshot("render_token_with_labels");
+    harness.snapshot("render_token_with_labels");
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn render_segmentation_spans() {
     harness.set_size(Vec2::new(900.0, 120.0));
     harness.run();
 
-    harness.wgpu_snapshot("render_segmentation_spans");
+    harness.snapshot("render_segmentation_spans");
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn change_segmentation_value() {
     get_text_input(&harness, "subtokenizedt").key_press(Key::Enter);
     harness.run();
 
-    harness.wgpu_snapshot("change_segmentation_value");
+    harness.snapshot("change_segmentation_value");
 }
 
 fn get_text_input<'a>(harness: &'a Harness<'_>, value: &'a str) -> Node<'a> {
