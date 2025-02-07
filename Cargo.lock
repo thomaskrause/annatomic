@@ -1309,15 +1309,16 @@ dependencies = [
 [[package]]
 name = "egui-notify"
 version = "0.18.0"
-source = "git+https://github.com/bircni/egui-notify.git?branch=patch%2Fegui-version#10822fc1c7fb1b6c0e02c94dcf93afefb7c3cda4"
+source = "git+https://github.com/bircni/egui-notify.git?branch=patch%2Fegui-version#bfc72c45502b3c0175be51a626f3a3eb4e817274"
 dependencies = [
  "egui",
 ]
 
 [[package]]
 name = "egui-phosphor"
-version = "0.8.0"
-source = "git+https://github.com/bircni/egui-phosphor?branch=patch%2Fegui-version#f1faa67171ab3b5b85738f8ef6eab9ac85a23cb7"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "171d57331491e92f0a7c73fad1088716e3200984309f4f8684731b750cee1378"
 dependencies = [
  "egui",
 ]
@@ -2980,9 +2981,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.20.2"
+version = "1.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
+checksum = "945462a4b81e43c4e3ba96bd7b49d834c6f61198356aa858733bc4acf3cbe62e"
 
 [[package]]
 name = "orbclient"

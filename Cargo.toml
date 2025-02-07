@@ -26,7 +26,7 @@ log = "0.4"
 anyhow = "1.0.94"
 clap = { version = "4.5.23", features = ["derive"] }
 egui-notify = "0.18.0"
-egui-phosphor = "0.8.0"
+egui-phosphor = "0.9.0"
 graphannis = "3.5.1"
 graphannis-core = "3.5.1"
 rayon = "1.10.0"
@@ -47,7 +47,6 @@ tempfile = "3.15.0"
 [patch.crates-io]
 graphannis = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
 graphannis-core = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
-egui-phosphor = { git = "https://github.com/bircni/egui-phosphor", branch = "patch/egui-version" }
 egui-notify = { git = "https://github.com/bircni/egui-notify.git", branch = "patch/egui-version" }
 
 # Compile some of the dependencies in release mode if when we are ourself in
