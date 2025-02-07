@@ -30,7 +30,7 @@ fn show_metadata() {
     harness.get_by_label("single_sentence/zossen").click();
 
     harness.run();
-    harness.wgpu_snapshot("show_metadata");
+    harness.snapshot("show_metadata");
 }
 
 fn save_pending_changes_action(
@@ -81,7 +81,7 @@ fn undo_redo() {
 
     assert_eq!(0, query_count("annis:doc=\"zossen\"", app_state.clone()));
     assert_eq!(1, query_count("annis:doc=\"zossen-1\"", app_state.clone()));
-    let r1 = harness.try_wgpu_snapshot("undo_redo_1");
+    let r1 = harness.try_snapshot("undo_redo_1");
 
     let text_input = harness
         .get_by(|n| n.role() == Role::TextInput && n.value().unwrap_or_default() == "zossen-1");
@@ -92,7 +92,7 @@ fn undo_redo() {
     assert_eq!(1, query_count("annis:doc=\"zossen-2\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen-1\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen\"", app_state.clone()));
-    let r2 = harness.try_wgpu_snapshot("undo_redo_2");
+    let r2 = harness.try_snapshot("undo_redo_2");
 
     // Undo last change
     {
@@ -104,7 +104,7 @@ fn undo_redo() {
     assert_eq!(1, query_count("annis:doc=\"zossen-1\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen-2\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen\"", app_state.clone()));
-    let r3 = harness.try_wgpu_snapshot("undo_redo_3");
+    let r3 = harness.try_snapshot("undo_redo_3");
 
     // Redo, so the name should be "zossen-2" again
     {
@@ -116,7 +116,7 @@ fn undo_redo() {
     assert_eq!(1, query_count("annis:doc=\"zossen-2\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen-1\"", app_state.clone()));
     assert_eq!(0, query_count("annis:doc=\"zossen\"", app_state.clone()));
-    let r4 = harness.try_wgpu_snapshot("undo_redo_4");
+    let r4 = harness.try_snapshot("undo_redo_4");
 
     assert_screenshots![r1, r2, r3, r4];
 }
@@ -167,14 +167,14 @@ fn add_and_delete_entry() {
 
     wait_for_editor(&mut harness, app_state.clone());
 
-    let r1 = harness.try_wgpu_snapshot("after-adding-metadata");
+    let r1 = harness.try_snapshot("after-adding-metadata");
 
     // Delete the entry again
     let delete_buttons: Vec<_> = harness.get_all_by_label(TRASH).collect();
     delete_buttons[3].click();
     wait_for_editor(&mut harness, app_state.clone());
 
-    let r2 = harness.try_wgpu_snapshot("after-deleting-metadata");
+    let r2 = harness.try_snapshot("after-deleting-metadata");
 
     assert_screenshots![r1, r2];
 }

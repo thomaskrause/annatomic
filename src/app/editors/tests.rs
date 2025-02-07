@@ -50,7 +50,7 @@ fn render_token_with_labels() {
         "single_sentence/zossen",
     );
     harness.run();
-    harness.wgpu_snapshot("render_token_with_labels");
+    harness.snapshot("render_token_with_labels");
 }
 
 #[test]
@@ -64,14 +64,14 @@ fn select_token_range() {
         .click();
     harness.run();
     assert_eq!(1, editor.read().selected_nodes.len());
-    let r1 = harness.try_wgpu_snapshot("select_token_range_first_token");
+    let r1 = harness.try_snapshot("select_token_range_first_token");
 
     // Emulate pressing and holding the shift key
     editor.write().select_range(5);
     harness.run();
     assert_eq!(5, editor.read().selected_nodes.len());
 
-    let r2 = harness.try_wgpu_snapshot("select_token_range");
+    let r2 = harness.try_snapshot("select_token_range");
 
     assert_screenshots![r1, r2];
 }
@@ -85,7 +85,7 @@ fn render_segmentation_spans() {
     harness.set_size(Vec2::new(2100.0, 210.0));
     harness.run();
 
-    harness.wgpu_snapshot("render_segmentation_spans");
+    harness.snapshot("render_segmentation_spans");
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn change_segmentation_value() {
     get_text_input(&harness, "subtokenizedt").key_press(Key::Enter);
     harness.run();
 
-    harness.wgpu_snapshot("change_segmentation_value");
+    harness.snapshot("change_segmentation_value");
 }
 
 fn get_text_input<'a>(harness: &'a Harness<'_>, value: &'a str) -> Node<'a> {

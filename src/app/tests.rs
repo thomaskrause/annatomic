@@ -7,7 +7,8 @@ use tempfile::TempDir;
 
 use super::*;
 
-const MAX_WAIT_STEPS: usize = 10_000;
+/// 30 Seconds, since th tests are run with 4fps
+const MAX_WAIT_STEPS: usize = 120;
 
 pub(crate) fn create_app_with_corpus<R: Read, S: Into<String>>(
     corpus_name: S,
@@ -47,6 +48,7 @@ pub(crate) fn create_test_harness(
 
     let harness = Harness::builder()
         .with_size(egui::Vec2::new(800.0, 600.0))
+        .with_max_steps(24)
         .build(app);
 
     (harness, result_app_state.clone())
@@ -59,14 +61,13 @@ pub(crate) fn wait_for_editor(
     for i in 0..MAX_WAIT_STEPS {
         harness.step();
         let app_state = app_state.read();
-        if i > 10 && app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_some() {
+        if i > 10 && !app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_some()
+        {
             break;
         }
     }
 
-    for _ in 0..10 {
-        harness.step();
-    }
+    harness.run_steps(10);
 }
 
 pub(crate) fn focus_and_wait(harness: &mut Harness<'static>, id: Id) {
@@ -92,9 +93,7 @@ pub(crate) fn wait_for_editor_vanished(
         }
     }
 
-    for _ in 0..10 {
-        harness.step();
-    }
+    harness.run_steps(10);
 }
 
 pub(crate) fn wait_until_jobs_finished(
@@ -141,5 +140,5 @@ fn show_main_page() {
     let (mut harness, _) = create_test_harness(app_state);
     harness.run();
 
-    harness.wgpu_snapshot("show_main_page");
+    harness.snapshot("show_main_page");
 }

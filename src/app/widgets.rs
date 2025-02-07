@@ -117,13 +117,13 @@ impl Widget for TokenEditor<'_> {
         }
         let group_response = g.show(ui, |ui| {
             if let Some(width) = self.width {
-                ui.set_width(
-                    width
-                        - g.inner_margin.left
-                        - g.inner_margin.right
-                        - g.outer_margin.left
-                        - g.outer_margin.right,
-                );
+                let width: f32 = width
+                    - g.inner_margin.left as f32
+                    - g.inner_margin.right as f32
+                    - g.outer_margin.left as f32
+                    - g.outer_margin.right as f32;
+
+                ui.set_width(width);
             } else if let Some(min_width) = self.min_width {
                 ui.set_min_width(min_width);
             }

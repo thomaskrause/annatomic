@@ -29,7 +29,7 @@ fn select_corpus() {
         assert!(app_state.current_editor.get().is_some());
     }
 
-    harness.wgpu_snapshot("select_corpus");
+    harness.snapshot("select_corpus");
 }
 
 #[test]
@@ -48,17 +48,14 @@ fn create_new_corpus() {
     inputs[0].type_text("example");
     harness.get_by_label("Add").click();
 
-    for i in 0..10_000 {
+    for i in 0..120 {
         harness.step();
         let app_state = app_state.read();
         if i > 10 && app_state.current_editor.get().is_some() && app_state.notifier.is_empty() {
             break;
         }
     }
-    // Add some runs, so that the toasts have time to disappear
-    for _ in 0..20 {
-        harness.step();
-    }
+    harness.run();
 
     {
         let app_state = app_state.read();
@@ -70,7 +67,7 @@ fn create_new_corpus() {
         assert!(app_state.current_editor.get().is_some());
     }
 
-    harness.wgpu_snapshot("create_new_corpus");
+    harness.snapshot("create_new_corpus");
 }
 
 #[test]
@@ -88,12 +85,12 @@ fn delete_corpus() {
         app_state.project.scheduled_for_deletion = Some("single_sentence".to_string());
     }
     wait_for_editor(&mut harness, app_state.clone());
-    let confirmation_result = harness.try_wgpu_snapshot("delete_corpus_confirmation");
+    let confirmation_result = harness.try_snapshot("delete_corpus_confirmation");
 
     harness.get_by_label_contains("Delete").click();
     harness.run();
     wait_for_editor_vanished(&mut harness, app_state.clone());
-    let final_result = harness.try_wgpu_snapshot("delete_corpus");
+    let final_result = harness.try_snapshot("delete_corpus");
     assert_screenshots!(confirmation_result, final_result);
     {
         let app_state = app_state.read();
