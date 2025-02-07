@@ -61,7 +61,7 @@ pub(crate) fn wait_for_editor(
     for i in 0..MAX_WAIT_STEPS {
         harness.step();
         let app_state = app_state.read();
-        if i > 10 && app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_some() {
+        if i > 10 && !app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_some() {
             break;
         }
     }
