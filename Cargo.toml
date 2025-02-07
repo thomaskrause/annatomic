@@ -25,7 +25,7 @@ log = "0.4"
 # You only need serde if you want app persistence:
 anyhow = "1.0.94"
 clap = { version = "4.5.23", features = ["derive"] }
-egui-notify = "0.18.0"
+egui-notify = "0.19.0"
 egui-phosphor = "0.9.0"
 graphannis = "3.5.1"
 graphannis-core = "3.5.1"
@@ -47,7 +47,6 @@ tempfile = "3.15.0"
 [patch.crates-io]
 graphannis = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
 graphannis-core = { git = "https://github.com/korpling/graphANNIS.git", branch = "annatomic-improvements" }
-egui-notify = { git = "https://github.com/bircni/egui-notify.git", branch = "patch/egui-version" }
 
 # Compile some of the dependencies in release mode if when we are ourself in
 # "dev" mode (like building debug binaries or running tests)
