@@ -88,7 +88,7 @@ fn delete_corpus() {
     let confirmation_result = harness.try_snapshot("delete_corpus_confirmation");
 
     harness.get_by_label_contains("Delete").click();
-    harness.run();
+    harness.step();
     wait_for_editor_vanished(&mut harness, app_state.clone());
     let final_result = harness.try_snapshot("delete_corpus");
     assert_screenshots!(confirmation_result, final_result);
