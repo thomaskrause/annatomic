@@ -8,7 +8,10 @@ use egui_kittest::{
 };
 use graphannis::model::AnnotationComponentType;
 
-use crate::{app::set_fonts, assert_screenshots};
+use crate::{
+    app::{messages::Notifier, set_fonts},
+    assert_screenshots,
+};
 
 use super::{DocumentEditor, Editor, JobExecutor};
 
@@ -28,9 +31,14 @@ fn create_example_ui(
         .unwrap()
         .unwrap();
     let job = JobExecutor::default();
-    let editor =
-        DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph)), job.clone())
-            .unwrap();
+    let notifier = Notifier::default();
+    let editor = DocumentEditor::create_from_graph(
+        document_node,
+        Arc::new(RwLock::new(graph)),
+        job.clone(),
+        notifier.clone(),
+    )
+    .unwrap();
     let editor = Arc::new(RwLock::new(editor));
     let editor_for_closure = editor.clone();
     let mut harness = Harness::builder().build_ui(move |ui| {

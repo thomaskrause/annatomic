@@ -265,7 +265,7 @@ impl CorpusTree {
                 if entry_idx >= self.data.node_annos.len() {
                     entry_idx = self.data.node_annos.len() - 1;
                 }
-                self.apply_pending_updates();
+                self.apply_pending_updates_for_editor();
             };
         });
 
@@ -282,7 +282,7 @@ impl CorpusTree {
         }
 
         if any_lost_focus && self.has_pending_updates() {
-            self.apply_pending_updates();
+            self.apply_pending_updates_for_editor();
         }
     }
 
@@ -343,7 +343,7 @@ impl CorpusTree {
             self.data.node_annos.sort();
             self.data.new_entry = MetaEntry::default();
 
-            self.apply_pending_updates();
+            self.apply_pending_updates_for_editor();
         }
     }
 
@@ -421,7 +421,7 @@ impl CorpusTree {
                 if !is_selected && label.gained_focus() {
                     self.select_corpus_node(Some(parent));
                 } else if label.clicked() {
-                    self.apply_pending_updates();
+                    self.apply_pending_updates_for_editor();
                     label.request_focus();
                     if is_selected {
                         self.select_corpus_node(None);
@@ -462,7 +462,7 @@ impl Editor for CorpusTree {
         !self.data.changed_keys.is_empty()
     }
 
-    fn apply_pending_updates(&mut self) {
+    fn apply_pending_updates_for_editor(&mut self) {
         if self.has_pending_updates() {
             // apply all changes as updates to our internal corpus graph
             let parent_node_name = self.data.parent_node_name.clone();

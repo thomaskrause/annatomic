@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use graphannis::{graph::GraphStorage, model::AnnotationComponentType, AnnotationGraph};
 use graphannis_core::{
     annostorage::NodeAnnotationStorage,
@@ -164,7 +164,7 @@ impl<'a> TokenHelper<'a> {
         Ok(result)
     }
 
-    /// Find all token covered by the given node
+    /// Find all token covered by the given node and sort the result according to the token order.
     pub fn covered_token(&self, node_id: NodeID) -> Result<Vec<NodeID>> {
         let mut result = Vec::default();
         let coverage = UnionEdgeContainer::new(
@@ -182,8 +182,13 @@ impl<'a> TokenHelper<'a> {
         }
 
         // Sort token by their order
-        if let Some(gs) = self.ordering_gs.get("") {
-            result.sort_by(|a, b| {
+        self.sort_token(&mut result, None)?;
+        Ok(result)
+    }
+
+    pub fn sort_token(&self, token_ids: &mut [NodeID], segmentation: Option<&str>) -> Result<()> {
+        if let Some(gs) = self.ordering_gs.get(segmentation.unwrap_or_default()) {
+            token_ids.sort_by(|a, b| {
                 if a == b {
                     Ordering::Equal
                 } else if let Ok(connected) = gs.is_connected(*a, *b, 1, std::ops::Bound::Unbounded)
@@ -198,8 +203,99 @@ impl<'a> TokenHelper<'a> {
                 }
             });
         }
+        Ok(())
+    }
 
-        Ok(result)
+    /// Gets the token that comes before the given `node_id`. If a
+    /// `segmentation` is given, this will not be a base token but a
+    /// segmentation node that comes directly before the given node.
+    pub fn get_token_before(
+        &self,
+        node_id: NodeID,
+        segmentation: Option<&str>,
+    ) -> Result<Option<NodeID>> {
+        // Get all sorted covered token for this node
+        let covered_token = if self.is_token(node_id)? {
+            vec![node_id]
+        } else {
+            self.covered_token(node_id)?
+        };
+
+        // Find the token node before the left-most covered token
+        if let Some(first_covered_token) = covered_token.first() {
+            let gs_tok = self
+                .ordering_gs
+                .get("")
+                .context("Missing base token graph storage component")?;
+            if let Some(token_before) = gs_tok.get_ingoing_edges(*first_covered_token).next() {
+                let token_before = token_before?;
+
+                if let Some(segmentation) = segmentation {
+                    // If a segmentation node is requested as result, find the one covering this token
+
+                    let mut segmentation_nodes = Vec::new();
+                    for gs_cov in &self.cov_edges {
+                        for n in gs_cov.get_ingoing_edges(token_before) {
+                            segmentation_nodes.push(n?);
+                        }
+                    }
+
+                    self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
+                    Ok(segmentation_nodes.last().copied())
+                } else {
+                    Ok(Some(token_before))
+                }
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Gets the token that comes after the given `node_id`. If a `segmentation`
+    /// is given, this will not be a base token but a segmentation node that
+    /// comes directly after the given node.
+    pub fn get_token_after(
+        &self,
+        node_id: NodeID,
+        segmentation: Option<&str>,
+    ) -> Result<Option<NodeID>> {
+        // Get all sorted covered token for this node
+        let covered_token = if self.is_token(node_id)? {
+            vec![node_id]
+        } else {
+            self.covered_token(node_id)?
+        };
+
+        // Find the token node before the left-most covered token
+        if let Some(last_covered_token) = covered_token.last() {
+            let gs_tok = self
+                .ordering_gs
+                .get("")
+                .context("Missing base token graph storage component")?;
+            if let Some(token_after) = gs_tok.get_ingoing_edges(*last_covered_token).next() {
+                let token_after = token_after?;
+
+                if let Some(segmentation) = segmentation {
+                    // If a segmentation node is requested as result, find the one covering this token
+                    let mut segmentation_nodes = Vec::new();
+                    for gs_cov in &self.cov_edges {
+                        for n in gs_cov.get_ingoing_edges(token_after) {
+                            segmentation_nodes.push(n?);
+                        }
+                    }
+                    self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
+                    Ok(segmentation_nodes.first().copied())
+                } else {
+                    Ok(Some(token_after))
+                }
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
     }
 }
 
