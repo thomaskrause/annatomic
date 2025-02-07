@@ -114,7 +114,29 @@ pub(crate) fn wait_until_jobs_finished(
             break;
         }
     }
-    harness.run();
+    // Jobs can create notifications wait until these are finished, too
+    wait_until_notifications_finished(harness, app_state);
+}
+
+pub(crate) fn wait_until_notifications_finished(
+    harness: &mut Harness<'static>,
+    app_state: Arc<RwLock<crate::AnnatomicApp>>,
+) {
+    let mut steps_without_notification = 0;
+    for _ in 0..MAX_WAIT_STEPS {
+        harness.step();
+        let app_state = app_state.read();
+        if !app_state.notifier.is_empty() {
+            steps_without_notification += 1;
+        } else {
+            steps_without_notification = 0;
+        }
+
+        if steps_without_notification > 10 {
+            break;
+        }
+    }
+    harness.step();
 }
 
 #[macro_export]
