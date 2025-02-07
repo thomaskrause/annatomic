@@ -1,9 +1,5 @@
-use graphannis::{
-    model::AnnotationComponentType,
-    update::{GraphUpdate, UpdateEvent},
-    AnnotationGraph,
-};
-use graphannis_core::graph::ANNIS_NS;
+use graphannis::{graph::NodeID, update::GraphUpdate, AnnotationGraph};
+use graphannis_core::graph::NODE_NAME_KEY;
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
 
@@ -51,89 +47,7 @@ fn ordered_token_with_segmentation() {
     let mut updates = GraphUpdate::new();
     example_generator::create_corpus_structure_simple(&mut updates);
     example_generator::create_tokens(&mut updates, Some("root/doc1"));
-
-    // Add an additional segmentation layer
-    example_generator::make_span(
-        &mut updates,
-        "root/doc1#seg1",
-        &["root/doc1#tok1", "root/doc1#tok2", "root/doc1#tok3"],
-        true,
-    );
-    updates
-        .add_event(UpdateEvent::AddNodeLabel {
-            node_name: "root/doc1#seg1".into(),
-            anno_ns: ANNIS_NS.into(),
-            anno_name: "tok".into(),
-            anno_value: "This".into(),
-        })
-        .unwrap();
-    updates
-        .add_event(UpdateEvent::AddEdge {
-            source_node: "root/doc1#seg1".into(),
-            target_node: "root/doc1".into(),
-            layer: ANNIS_NS.into(),
-            component_type: AnnotationComponentType::PartOf.to_string(),
-            component_name: "".into(),
-        })
-        .unwrap();
-
-    example_generator::make_span(&mut updates, "root/doc1#seg2", &["root/doc1#tok4"], true);
-    updates
-        .add_event(UpdateEvent::AddNodeLabel {
-            node_name: "root/doc1#seg2".into(),
-            anno_ns: ANNIS_NS.into(),
-            anno_name: "tok".into(),
-            anno_value: "more".into(),
-        })
-        .unwrap();
-    updates
-        .add_event(UpdateEvent::AddEdge {
-            source_node: "root/doc1#seg2".into(),
-            target_node: "root/doc1".into(),
-            layer: ANNIS_NS.into(),
-            component_type: AnnotationComponentType::PartOf.to_string(),
-            component_name: "".into(),
-        })
-        .unwrap();
-
-    example_generator::make_span(&mut updates, "root/doc1#seg3", &["root/doc1#tok5"], true);
-    updates
-        .add_event(UpdateEvent::AddNodeLabel {
-            node_name: "root/doc1#seg3".into(),
-            anno_ns: ANNIS_NS.into(),
-            anno_name: "tok".into(),
-            anno_value: "complicated".into(),
-        })
-        .unwrap();
-    updates
-        .add_event(UpdateEvent::AddEdge {
-            source_node: "root/doc1#seg3".into(),
-            target_node: "root/doc1".into(),
-            layer: ANNIS_NS.into(),
-            component_type: AnnotationComponentType::PartOf.to_string(),
-            component_name: "".into(),
-        })
-        .unwrap();
-
-    // add the order relations for the segmentation
-    updates
-        .add_event(UpdateEvent::AddEdge {
-            source_node: "root/doc1#seg1".into(),
-            target_node: "root/doc1#seg2".into(),
-            layer: ANNIS_NS.to_string(),
-            component_type: "Ordering".to_string(),
-            component_name: "seg".to_string(),
-        })
-        .unwrap();
-    updates
-        .add_event(UpdateEvent::AddEdge {
-            source_node: "root/doc1#seg2".into(),
-            target_node: "root/doc1#seg3".into(),
-            layer: ANNIS_NS.to_string(),
-            component_type: "Ordering".to_string(),
-            component_name: "seg".to_string(),
-        })
-        .unwrap();
+    example_generator::create_segmentation(&mut updates);
 
     let mut g = AnnotationGraph::with_default_graphstorages(false).unwrap();
     g.apply_update(&mut updates, |_msg| {}).unwrap();
@@ -148,4 +62,126 @@ fn ordered_token_with_segmentation() {
         .collect_vec();
 
     assert_eq!(vec!["This", "more", "complicated",], ordered_token_ids);
+}
+
+#[test]
+fn token_before_and_after_base() {
+    let mut updates = GraphUpdate::new();
+    example_generator::create_corpus_structure_simple(&mut updates);
+    example_generator::create_tokens(&mut updates, Some("root/doc1"));
+    // Create a span we will use to the the token before and after
+    example_generator::make_span(
+        &mut updates,
+        "root/doc1#span",
+        &["root/doc1#tok3", "root/doc1#tok4"],
+        true,
+    );
+    let mut g = AnnotationGraph::with_default_graphstorages(false).unwrap();
+    g.apply_update(&mut updates, |_msg| {}).unwrap();
+
+    let span_id = g
+        .get_node_annos()
+        .get_node_id_from_name("root/doc1#span")
+        .unwrap()
+        .unwrap();
+
+    let token_helper = TokenHelper::new(&g).unwrap();
+
+    // Get an node and find the token before and after another token
+    let tok3_id = g
+        .get_node_annos()
+        .get_node_id_from_name("root/doc1#tok3")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        "root/doc1#tok2",
+        node_name(
+            token_helper
+                .get_token_before(tok3_id, None)
+                .unwrap()
+                .unwrap(),
+            &g
+        )
+    );
+    assert_eq!(
+        "root/doc1#tok4",
+        node_name(
+            token_helper
+                .get_token_after(tok3_id, None)
+                .unwrap()
+                .unwrap(),
+            &g
+        )
+    );
+
+    // Get an node and find the token before and after the span
+    assert_eq!(
+        "root/doc1#tok2",
+        node_name(
+            token_helper
+                .get_token_before(span_id, None)
+                .unwrap()
+                .unwrap(),
+            &g
+        )
+    );
+    assert_eq!(
+        "root/doc1#tok5",
+        node_name(
+            token_helper
+                .get_token_after(span_id, None)
+                .unwrap()
+                .unwrap(),
+            &g
+        )
+    );
+}
+
+#[test]
+fn token_before_and_after_segmentation() {
+    let mut updates = GraphUpdate::new();
+    example_generator::create_corpus_structure_simple(&mut updates);
+    example_generator::create_tokens(&mut updates, Some("root/doc1"));
+    example_generator::create_segmentation(&mut updates);
+
+    let mut g = AnnotationGraph::with_default_graphstorages(false).unwrap();
+    g.apply_update(&mut updates, |_msg| {}).unwrap();
+
+    let token_helper = TokenHelper::new(&g).unwrap();
+
+    // Get an node and find the token before and after another token
+    let seg2_id = g
+        .get_node_annos()
+        .get_node_id_from_name("root/doc1#seg2")
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        "root/doc1#seg1",
+        node_name(
+            token_helper
+                .get_token_before(seg2_id, Some("seg"))
+                .unwrap()
+                .unwrap(),
+            &g
+        )
+    );
+    assert_eq!(
+        "root/doc1#seg3",
+        node_name(
+            token_helper
+                .get_token_after(seg2_id, Some("seg"))
+                .unwrap()
+                .unwrap(),
+            &g
+        )
+    );
+}
+
+fn node_name(id: NodeID, g: &AnnotationGraph) -> String {
+    g.get_node_annos()
+        .get_value_for_item(&id, &NODE_NAME_KEY)
+        .unwrap()
+        .unwrap()
+        .to_string()
 }

@@ -1,3 +1,4 @@
+use graphannis::model::AnnotationComponentType;
 use graphannis_core::graph::{
     update::{GraphUpdate, UpdateEvent},
     ANNIS_NS,
@@ -122,6 +123,91 @@ pub fn create_tokens(update: &mut GraphUpdate, document_node: Option<&str>) {
             })
             .unwrap();
     }
+}
+
+/// Add an additional segmentation layer to the tokens created by `create_tokens()`.   
+pub fn create_segmentation(update: &mut GraphUpdate) {
+    make_span(
+        update,
+        "root/doc1#seg1",
+        &["root/doc1#tok1", "root/doc1#tok2", "root/doc1#tok3"],
+        true,
+    );
+    update
+        .add_event(UpdateEvent::AddNodeLabel {
+            node_name: "root/doc1#seg1".into(),
+            anno_ns: ANNIS_NS.into(),
+            anno_name: "tok".into(),
+            anno_value: "This".into(),
+        })
+        .unwrap();
+    update
+        .add_event(UpdateEvent::AddEdge {
+            source_node: "root/doc1#seg1".into(),
+            target_node: "root/doc1".into(),
+            layer: ANNIS_NS.into(),
+            component_type: AnnotationComponentType::PartOf.to_string(),
+            component_name: "".into(),
+        })
+        .unwrap();
+
+    make_span(update, "root/doc1#seg2", &["root/doc1#tok4"], true);
+    update
+        .add_event(UpdateEvent::AddNodeLabel {
+            node_name: "root/doc1#seg2".into(),
+            anno_ns: ANNIS_NS.into(),
+            anno_name: "tok".into(),
+            anno_value: "more".into(),
+        })
+        .unwrap();
+    update
+        .add_event(UpdateEvent::AddEdge {
+            source_node: "root/doc1#seg2".into(),
+            target_node: "root/doc1".into(),
+            layer: ANNIS_NS.into(),
+            component_type: AnnotationComponentType::PartOf.to_string(),
+            component_name: "".into(),
+        })
+        .unwrap();
+
+    make_span(update, "root/doc1#seg3", &["root/doc1#tok5"], true);
+    update
+        .add_event(UpdateEvent::AddNodeLabel {
+            node_name: "root/doc1#seg3".into(),
+            anno_ns: ANNIS_NS.into(),
+            anno_name: "tok".into(),
+            anno_value: "complicated".into(),
+        })
+        .unwrap();
+    update
+        .add_event(UpdateEvent::AddEdge {
+            source_node: "root/doc1#seg3".into(),
+            target_node: "root/doc1".into(),
+            layer: ANNIS_NS.into(),
+            component_type: AnnotationComponentType::PartOf.to_string(),
+            component_name: "".into(),
+        })
+        .unwrap();
+
+    // add the order relations for the segmentation
+    update
+        .add_event(UpdateEvent::AddEdge {
+            source_node: "root/doc1#seg1".into(),
+            target_node: "root/doc1#seg2".into(),
+            layer: ANNIS_NS.to_string(),
+            component_type: "Ordering".to_string(),
+            component_name: "seg".to_string(),
+        })
+        .unwrap();
+    update
+        .add_event(UpdateEvent::AddEdge {
+            source_node: "root/doc1#seg2".into(),
+            target_node: "root/doc1#seg3".into(),
+            layer: ANNIS_NS.to_string(),
+            component_type: "Ordering".to_string(),
+            component_name: "seg".to_string(),
+        })
+        .unwrap();
 }
 
 pub fn create_token_node(

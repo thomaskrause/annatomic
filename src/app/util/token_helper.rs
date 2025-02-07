@@ -268,13 +268,13 @@ impl<'a> TokenHelper<'a> {
             self.covered_token(node_id)?
         };
 
-        // Find the token node before the left-most covered token
+        // Find the token node after the right-most covered token
         if let Some(last_covered_token) = covered_token.last() {
             let gs_tok = self
                 .ordering_gs
                 .get("")
                 .context("Missing base token graph storage component")?;
-            if let Some(token_after) = gs_tok.get_ingoing_edges(*last_covered_token).next() {
+            if let Some(token_after) = gs_tok.get_outgoing_edges(*last_covered_token).next() {
                 let token_after = token_after?;
 
                 if let Some(segmentation) = segmentation {
