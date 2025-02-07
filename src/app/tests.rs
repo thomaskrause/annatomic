@@ -58,16 +58,16 @@ pub(crate) fn wait_for_editor(
     harness: &mut Harness<'static>,
     app_state: Arc<RwLock<crate::AnnatomicApp>>,
 ) {
+    // Wait until editor has been created
     for i in 0..MAX_WAIT_STEPS {
         harness.step();
         let app_state = app_state.read();
-        if i > 10 && !app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_some()
-        {
+        if i > 3 && app_state.current_editor.get().is_some() {
             break;
         }
     }
 
-    harness.run_steps(10);
+    wait_until_jobs_finished(harness, app_state);
 }
 
 pub(crate) fn focus_and_wait(harness: &mut Harness<'static>, id: Id) {
@@ -88,22 +88,29 @@ pub(crate) fn wait_for_editor_vanished(
     for i in 0..MAX_WAIT_STEPS {
         harness.step();
         let app_state = app_state.read();
-        if i > 10 && app_state.jobs.has_running_jobs() && app_state.current_editor.get().is_none() {
+        if i > 3 && app_state.current_editor.get().is_none() {
             break;
         }
     }
 
-    harness.run_steps(10);
+    wait_until_jobs_finished(harness, app_state);
 }
 
 pub(crate) fn wait_until_jobs_finished(
     harness: &mut Harness<'static>,
     app_state: Arc<RwLock<crate::AnnatomicApp>>,
 ) {
-    for i in 0..MAX_WAIT_STEPS {
+    let mut steps_without_jobs = 0;
+    for _ in 0..MAX_WAIT_STEPS {
         harness.step();
         let app_state = app_state.read();
-        if i > 10 && !app_state.jobs.has_running_jobs() {
+        if !app_state.jobs.has_running_jobs() {
+            steps_without_jobs += 1;
+        } else {
+            steps_without_jobs = 0;
+        }
+
+        if steps_without_jobs > 10 {
             break;
         }
     }
