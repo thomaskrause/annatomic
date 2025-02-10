@@ -234,14 +234,12 @@ impl AnnatomicApp {
                         let corpus_cache = self.project.corpus_cache.clone();
                         let location = corpus.location.clone();
                         let jobs = self.jobs.clone();
-                        let notifier = self.notifier.clone();
                         self.jobs.add(
                             job_title,
                             move |_| {
                                 let graph = corpus_cache.get(&location)?;
-                                let document_editor = DocumentEditor::create_from_graph(
-                                    node_id, graph, jobs, notifier,
-                                )?;
+                                let document_editor =
+                                    DocumentEditor::create_from_graph(node_id, graph, jobs)?;
 
                                 Ok(document_editor)
                             },

@@ -32,13 +32,9 @@ fn create_example_ui(
         .unwrap();
     let job = JobExecutor::default();
     let notifier = Notifier::default();
-    let editor = DocumentEditor::create_from_graph(
-        document_node,
-        Arc::new(RwLock::new(graph)),
-        job.clone(),
-        notifier.clone(),
-    )
-    .unwrap();
+    let editor =
+        DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph)), job.clone())
+            .unwrap();
     let editor = Arc::new(RwLock::new(editor));
     let editor_for_closure = editor.clone();
     let mut harness = Harness::builder().build_ui(move |ui| {

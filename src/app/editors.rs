@@ -1,11 +1,11 @@
 use std::{
+    any::Any,
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
 use super::{
-    messages::Notifier,
     views::Editor,
     widgets::{Token, TokenEditor},
     JobExecutor,
@@ -16,7 +16,6 @@ use egui::{
     mutex::RwLock, Button, Key, KeyboardShortcut, Modifiers, Pos2, Rangef, Rect, ScrollArea,
     TextEdit, Ui, Widget,
 };
-use egui_notify::Toast;
 use graphannis::{
     graph::NodeID,
     model::AnnotationComponentType,
@@ -54,18 +53,20 @@ enum EditorActions {
     },
 }
 
+type StateUpdateFn = Box<dyn FnOnce(&mut DocumentEditor) + Send + Sync>;
+
 impl EditorActions {
     fn apply(
-        &self,
+        self,
         graph: &AnnotationGraph,
         parent_name: &str,
         updates: &mut GraphUpdate,
-    ) -> anyhow::Result<()> {
-        match self {
+    ) -> anyhow::Result<StateUpdateFn> {
+        let state_update: StateUpdateFn = match self {
             EditorActions::ModifySegmentationValue { node_id, new_value } => {
                 let node_name = graph
                     .get_node_annos()
-                    .get_value_for_item(node_id, &NODE_NAME_KEY)?
+                    .get_value_for_item(&node_id, &NODE_NAME_KEY)?
                     .context("Missing node name")?;
 
                 updates.add_event(UpdateEvent::DeleteNodeLabel {
@@ -79,6 +80,7 @@ impl EditorActions {
                     anno_name: TOKEN_KEY.name.clone().into(),
                     anno_value: new_value.to_string(),
                 })?;
+                Box::new(|_| {})
             }
             EditorActions::AddSegmentationSpan {
                 segmentation,
@@ -96,8 +98,8 @@ impl EditorActions {
                 let tok_helper = TokenHelper::new(graph)?;
                 let mut covered_token = Vec::new();
                 for n in selected_nodes {
-                    if tok_helper.is_token(*n)? {
-                        covered_token.push(*n);
+                    if tok_helper.is_token(n)? {
+                        covered_token.push(n);
                     }
                 }
                 tok_helper.sort_token(&mut covered_token, None)?;
@@ -142,12 +144,12 @@ impl EditorActions {
                 // Find the segmentations node before and after the selection to add the Ordering edges
                 let matching_ordering_components = graph.get_all_components(
                     Some(AnnotationComponentType::Ordering),
-                    Some(segmentation),
+                    Some(&segmentation),
                 );
                 if let Some(ordering_component) = matching_ordering_components.first() {
                     if let Some(first_covered) = covered_token.first() {
                         if let Some(token_before) =
-                            tok_helper.get_token_before(*first_covered, Some(segmentation))?
+                            tok_helper.get_token_before(*first_covered, Some(&segmentation))?
                         {
                             let token_before = graph
                                 .get_node_annos()
@@ -169,7 +171,7 @@ impl EditorActions {
                     }
                     if let Some(last_covered) = covered_token.last() {
                         if let Some(token_after) =
-                            tok_helper.get_token_after(*last_covered, Some(segmentation))?
+                            tok_helper.get_token_after(*last_covered, Some(&segmentation))?
                         {
                             let last_covered = graph
                                 .get_node_annos()
@@ -190,15 +192,37 @@ impl EditorActions {
                         }
                     }
                 }
+                // Regenerate the token node list for this segmentation when updating the editor state
 
-                for u in updates.iter()? {
-                    dbg!(u?);
+                let mut token_to_index = HashMap::new();
+                let token_ids = tok_helper.get_ordered_token(parent_name, None)?;
+                for (idx, node_id) in token_ids.iter().enumerate() {
+                    token_to_index.insert(*node_id, idx);
                 }
+                let token_ids = tok_helper.get_ordered_token(parent_name, Some(&segmentation))?;
+                let mut new_segmentation_tokens = Vec::new();
+                for node_id in token_ids.iter() {
+                    let covered = tok_helper.covered_token(*node_id).unwrap_or_default();
+                    let start = covered.first().and_then(|t| token_to_index.get(t));
+                    let end = covered.last().and_then(|t| token_to_index.get(t));
+                    if let (Some(start), Some(end)) = (start, end) {
+                        if let Ok(t) = Token::from_graph(*node_id, *start, *end, graph) {
+                            new_segmentation_tokens.push(t);
+                        }
+                    }
+                }
+                Box::new(move |editor| {
+                    editor.layout_info.valid = false;
+                    editor.layout_info.min_token_width.clear();
+                    editor
+                        .segmentations
+                        .insert(segmentation.to_string(), new_segmentation_tokens);
+                })
             }
             EditorActions::DeleteNode { node_id } => {
                 let node_name = graph
                     .get_node_annos()
-                    .get_value_for_item(node_id, &NODE_NAME_KEY)?
+                    .get_value_for_item(&node_id, &NODE_NAME_KEY)?
                     .context("Missing node name")?;
                 updates.add_event(UpdateEvent::DeleteNode {
                     node_name: node_name.to_string(),
@@ -206,8 +230,8 @@ impl EditorActions {
                 // Bridge any ordering edges that connect to this node to the remaining ones before and after
                 for c in graph.get_all_components(Some(AnnotationComponentType::Ordering), None) {
                     if let Some(gs) = graph.get_graphstorage_as_ref(&c) {
-                        let mut ingoing = gs.get_ingoing_edges(*node_id);
-                        let mut outgoing = gs.get_outgoing_edges(*node_id);
+                        let mut ingoing = gs.get_ingoing_edges(node_id);
+                        let mut outgoing = gs.get_outgoing_edges(node_id);
                         if let (Some(ingoing), Some(outgoing)) = (ingoing.next(), outgoing.next()) {
                             let ingoing = graph
                                 .get_node_annos()
@@ -227,9 +251,10 @@ impl EditorActions {
                         }
                     }
                 }
+                Box::new(|_| {})
             }
-        }
-        Ok(())
+        };
+        Ok(state_update)
     }
 }
 
@@ -246,7 +271,6 @@ pub(crate) struct DocumentEditor {
     segmentations: BTreeMap<String, Vec<Token>>,
     layout_info: LayoutInfo,
     jobs: JobExecutor,
-    notifier: Notifier,
 }
 
 impl DocumentEditor {
@@ -254,7 +278,6 @@ impl DocumentEditor {
         selected_corpus_node: NodeID,
         graph: Arc<RwLock<AnnotationGraph>>,
         jobs: JobExecutor,
-        notifier: Notifier,
     ) -> Result<Self> {
         let mut token = Vec::new();
         let mut segmentations = BTreeMap::new();
@@ -276,7 +299,7 @@ impl DocumentEditor {
                 token_to_index.insert(node_id, idx);
             }
 
-            // Find all ordering components othe than the base layer
+            // Find all ordering components other than the base layer
             for ordering_component in
                 graph.get_all_components(Some(AnnotationComponentType::Ordering), None)
             {
@@ -325,7 +348,6 @@ impl DocumentEditor {
             currently_edited_node: None,
             current_edited_value: String::new(),
             jobs,
-            notifier,
         })
     }
 
@@ -483,8 +505,6 @@ impl DocumentEditor {
                             });
                     }
                 }
-                self.notifier
-                    .add_toast(Toast::warning("Not implemented yet"));
                 self.apply_pending_updates_for_editor();
             }
         }
@@ -641,18 +661,28 @@ impl Editor for DocumentEditor {
         self.jobs.add(
             "Applying editor action",
             move |_job| {
-                let mut updates = GraphUpdate::new();
+                let mut graph_updates = GraphUpdate::new();
                 let graph = graph.read();
 
+                let mut state_updates = Vec::new();
                 for action in pending_actions {
-                    action.apply(&graph, &parent_name, &mut updates)?;
+                    let editor_state_update =
+                        action.apply(&graph, &parent_name, &mut graph_updates)?;
+                    state_updates.push(editor_state_update);
                 }
 
-                Ok(updates)
+                Ok((graph_updates, state_updates))
             },
-            |update, app| {
-                app.project.add_changeset(update);
-                app.apply_pending_updates();
+            |(graph_updates, state_updates), app| {
+                app.project.add_changeset(graph_updates);
+                if let Some(editor) = app.current_editor.get_mut() {
+                    let editor: &mut dyn Any = editor;
+                    if let Some(editor) = editor.downcast_mut::<DocumentEditor>() {
+                        for u in state_updates {
+                            u(editor);
+                        }
+                    }
+                }
             },
         );
     }
