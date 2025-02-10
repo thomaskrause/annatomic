@@ -54,6 +54,185 @@ enum EditorActions {
     },
 }
 
+impl EditorActions {
+    fn apply(
+        &self,
+        graph: &AnnotationGraph,
+        parent_name: &str,
+        updates: &mut GraphUpdate,
+    ) -> anyhow::Result<()> {
+        match self {
+            EditorActions::ModifySegmentationValue { node_id, new_value } => {
+                let node_name = graph
+                    .get_node_annos()
+                    .get_value_for_item(node_id, &NODE_NAME_KEY)?
+                    .context("Missing node name")?;
+
+                updates.add_event(UpdateEvent::DeleteNodeLabel {
+                    node_name: node_name.to_string(),
+                    anno_ns: TOKEN_KEY.ns.clone().into(),
+                    anno_name: TOKEN_KEY.name.clone().into(),
+                })?;
+                updates.add_event(UpdateEvent::AddNodeLabel {
+                    node_name: node_name.to_string(),
+                    anno_ns: TOKEN_KEY.ns.clone().into(),
+                    anno_name: TOKEN_KEY.name.clone().into(),
+                    anno_value: new_value.to_string(),
+                })?;
+            }
+            EditorActions::AddSegmentationSpan {
+                segmentation,
+                selected_nodes,
+            } => {
+                let new_node_name = format!(
+                    "{}#{}",
+                    &parent_name,
+                    graph
+                        .get_node_annos()
+                        .get_largest_item()?
+                        .map(|id| id + 1)
+                        .unwrap_or_default()
+                );
+                let tok_helper = TokenHelper::new(graph)?;
+                let mut covered_token = Vec::new();
+                for n in selected_nodes {
+                    if tok_helper.is_token(*n)? {
+                        covered_token.push(*n);
+                    }
+                }
+                tok_helper.sort_token(&mut covered_token, None)?;
+
+                updates.add_event(UpdateEvent::AddNode {
+                    node_name: new_node_name.clone(),
+                    node_type: "node".to_string(),
+                })?;
+                updates.add_event(UpdateEvent::AddEdge {
+                    source_node: new_node_name.clone(),
+                    target_node: parent_name.to_string(),
+                    layer: ANNIS_NS.to_string(),
+                    component_type: AnnotationComponentType::PartOf.to_string(),
+                    component_name: "".to_string(),
+                })?;
+                updates.add_event(UpdateEvent::AddNodeLabel {
+                    node_name: new_node_name.clone(),
+                    anno_ns: TOKEN_KEY.ns.to_string(),
+                    anno_name: TOKEN_KEY.name.to_string(),
+                    anno_value: String::default(),
+                })?;
+                updates.add_event(UpdateEvent::AddNodeLabel {
+                    node_name: new_node_name.clone(),
+                    anno_ns: ANNIS_NS.to_string(),
+                    anno_name: segmentation.clone(),
+                    anno_value: String::default(),
+                })?;
+
+                for target_node in &covered_token {
+                    let target_node_name = graph
+                        .get_node_annos()
+                        .get_value_for_item(target_node, &NODE_NAME_KEY)?
+                        .context("Missing node name")?;
+                    updates.add_event(UpdateEvent::AddEdge {
+                        source_node: new_node_name.clone(),
+                        target_node: target_node_name.to_string(),
+                        layer: "".to_string(),
+                        component_type: AnnotationComponentType::Coverage.to_string(),
+                        component_name: "".to_string(),
+                    })?;
+                }
+                // Find the segmentations node before and after the selection to add the Ordering edges
+                let matching_ordering_components = graph.get_all_components(
+                    Some(AnnotationComponentType::Ordering),
+                    Some(segmentation),
+                );
+                if let Some(ordering_component) = matching_ordering_components.first() {
+                    if let Some(first_covered) = covered_token.first() {
+                        if let Some(token_before) =
+                            tok_helper.get_token_before(*first_covered, Some(segmentation))?
+                        {
+                            let token_before = graph
+                                .get_node_annos()
+                                .get_value_for_item(&token_before, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+                            let first_covered = graph
+                                .get_node_annos()
+                                .get_value_for_item(first_covered, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+
+                            updates.add_event(UpdateEvent::AddEdge {
+                                source_node: token_before.to_string(),
+                                target_node: first_covered.to_string(),
+                                layer: ordering_component.layer.to_string(),
+                                component_type: ordering_component.get_type().to_string(),
+                                component_name: ordering_component.name.to_string(),
+                            })?;
+                        }
+                    }
+                    if let Some(last_covered) = covered_token.last() {
+                        if let Some(token_after) =
+                            tok_helper.get_token_after(*last_covered, Some(segmentation))?
+                        {
+                            let last_covered = graph
+                                .get_node_annos()
+                                .get_value_for_item(last_covered, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+                            let token_after = graph
+                                .get_node_annos()
+                                .get_value_for_item(&token_after, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+
+                            updates.add_event(UpdateEvent::AddEdge {
+                                source_node: last_covered.to_string(),
+                                target_node: token_after.to_string(),
+                                layer: ordering_component.layer.to_string(),
+                                component_type: ordering_component.get_type().to_string(),
+                                component_name: ordering_component.name.to_string(),
+                            })?;
+                        }
+                    }
+                }
+
+                for u in updates.iter()? {
+                    dbg!(u?);
+                }
+            }
+            EditorActions::DeleteNode { node_id } => {
+                let node_name = graph
+                    .get_node_annos()
+                    .get_value_for_item(node_id, &NODE_NAME_KEY)?
+                    .context("Missing node name")?;
+                updates.add_event(UpdateEvent::DeleteNode {
+                    node_name: node_name.to_string(),
+                })?;
+                // Bridge any ordering edges that connect to this node to the remaining ones before and after
+                for c in graph.get_all_components(Some(AnnotationComponentType::Ordering), None) {
+                    if let Some(gs) = graph.get_graphstorage_as_ref(&c) {
+                        let mut ingoing = gs.get_ingoing_edges(*node_id);
+                        let mut outgoing = gs.get_outgoing_edges(*node_id);
+                        if let (Some(ingoing), Some(outgoing)) = (ingoing.next(), outgoing.next()) {
+                            let ingoing = graph
+                                .get_node_annos()
+                                .get_value_for_item(&ingoing?, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+                            let outgoing = graph
+                                .get_node_annos()
+                                .get_value_for_item(&outgoing?, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+                            updates.add_event(UpdateEvent::DeleteEdge {
+                                source_node: ingoing.to_string(),
+                                target_node: outgoing.to_string(),
+                                layer: c.layer.to_string(),
+                                component_type: c.get_type().to_string(),
+                                component_name: c.name.to_string(),
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct DocumentEditor {
     parent_name: String,
@@ -460,188 +639,13 @@ impl Editor for DocumentEditor {
         let pending_actions = std::mem::take(&mut self.pending_actions);
         let parent_name = self.parent_name.clone();
         self.jobs.add(
-            "Applying segmentation value change",
+            "Applying editor action",
             move |_job| {
                 let mut updates = GraphUpdate::new();
                 let graph = graph.read();
 
                 for action in pending_actions {
-                    match action {
-                        EditorActions::ModifySegmentationValue { node_id, new_value } => {
-                            let node_name = graph
-                                .get_node_annos()
-                                .get_value_for_item(&node_id, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-
-                            updates.add_event(UpdateEvent::DeleteNodeLabel {
-                                node_name: node_name.to_string(),
-                                anno_ns: TOKEN_KEY.ns.clone().into(),
-                                anno_name: TOKEN_KEY.name.clone().into(),
-                            })?;
-                            updates.add_event(UpdateEvent::AddNodeLabel {
-                                node_name: node_name.to_string(),
-                                anno_ns: TOKEN_KEY.ns.clone().into(),
-                                anno_name: TOKEN_KEY.name.clone().into(),
-                                anno_value: new_value,
-                            })?;
-                        }
-                        EditorActions::AddSegmentationSpan {
-                            segmentation,
-                            selected_nodes,
-                        } => {
-                            let new_node_name = format!(
-                                "{}#{}",
-                                &parent_name,
-                                graph
-                                    .get_node_annos()
-                                    .get_largest_item()?
-                                    .map(|id| id + 1)
-                                    .unwrap_or_default()
-                            );
-                            let tok_helper = TokenHelper::new(&graph)?;
-                            let mut covered_token = Vec::new();
-                            for n in selected_nodes {
-                                if tok_helper.is_token(n)? {
-                                    covered_token.push(n);
-                                }
-                            }
-                            tok_helper.sort_token(&mut covered_token, None)?;
-
-                            updates.add_event(UpdateEvent::AddNode {
-                                node_name: new_node_name.clone(),
-                                node_type: "node".to_string(),
-                            })?;
-                            updates.add_event(UpdateEvent::AddEdge {
-                                source_node: new_node_name.clone(),
-                                target_node: parent_name.clone(),
-                                layer: ANNIS_NS.to_string(),
-                                component_type: AnnotationComponentType::PartOf.to_string(),
-                                component_name: "".to_string(),
-                            })?;
-                            updates.add_event(UpdateEvent::AddNodeLabel {
-                                node_name: new_node_name.clone(),
-                                anno_ns: TOKEN_KEY.ns.to_string(),
-                                anno_name: TOKEN_KEY.name.to_string(),
-                                anno_value: String::default(),
-                            })?;
-                            updates.add_event(UpdateEvent::AddNodeLabel {
-                                node_name: new_node_name.clone(),
-                                anno_ns: ANNIS_NS.to_string(),
-                                anno_name: segmentation.clone(),
-                                anno_value: String::default(),
-                            })?;
-
-                            for target_node in &covered_token {
-                                let target_node_name = graph
-                                    .get_node_annos()
-                                    .get_value_for_item(target_node, &NODE_NAME_KEY)?
-                                    .context("Missing node name")?;
-                                updates.add_event(UpdateEvent::AddEdge {
-                                    source_node: new_node_name.clone(),
-                                    target_node: target_node_name.to_string(),
-                                    layer: "".to_string(),
-                                    component_type: AnnotationComponentType::Coverage.to_string(),
-                                    component_name: "".to_string(),
-                                })?;
-                            }
-                            // Find the segmentations node before and after the selection to add the Ordering edges
-                            let matching_ordering_components = graph.get_all_components(
-                                Some(AnnotationComponentType::Ordering),
-                                Some(&segmentation),
-                            );
-                            if let Some(ordering_component) = matching_ordering_components.first() {
-                                if let Some(first_covered) = covered_token.first() {
-                                    if let Some(token_before) = tok_helper
-                                        .get_token_before(*first_covered, Some(&segmentation))?
-                                    {
-                                        let token_before = graph
-                                            .get_node_annos()
-                                            .get_value_for_item(&token_before, &NODE_NAME_KEY)?
-                                            .context("Missing node name")?;
-                                        let first_covered = graph
-                                            .get_node_annos()
-                                            .get_value_for_item(first_covered, &NODE_NAME_KEY)?
-                                            .context("Missing node name")?;
-
-                                        updates.add_event(UpdateEvent::AddEdge {
-                                            source_node: token_before.to_string(),
-                                            target_node: first_covered.to_string(),
-                                            layer: ordering_component.layer.to_string(),
-                                            component_type: ordering_component
-                                                .get_type()
-                                                .to_string(),
-                                            component_name: ordering_component.name.to_string(),
-                                        })?;
-                                    }
-                                }
-                                if let Some(last_covered) = covered_token.last() {
-                                    if let Some(token_after) = tok_helper
-                                        .get_token_after(*last_covered, Some(&segmentation))?
-                                    {
-                                        let last_covered = graph
-                                            .get_node_annos()
-                                            .get_value_for_item(last_covered, &NODE_NAME_KEY)?
-                                            .context("Missing node name")?;
-                                        let token_after = graph
-                                            .get_node_annos()
-                                            .get_value_for_item(&token_after, &NODE_NAME_KEY)?
-                                            .context("Missing node name")?;
-
-                                        updates.add_event(UpdateEvent::AddEdge {
-                                            source_node: last_covered.to_string(),
-                                            target_node: token_after.to_string(),
-                                            layer: ordering_component.layer.to_string(),
-                                            component_type: ordering_component
-                                                .get_type()
-                                                .to_string(),
-                                            component_name: ordering_component.name.to_string(),
-                                        })?;
-                                    }
-                                }
-                            }
-
-                            for u in updates.iter()? {
-                                dbg!(u?);
-                            }
-                        }
-                        EditorActions::DeleteNode { node_id } => {
-                            let node_name = graph
-                                .get_node_annos()
-                                .get_value_for_item(&node_id, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-                            updates.add_event(UpdateEvent::DeleteNode {
-                                node_name: node_name.to_string(),
-                            })?;
-                            // Bridge any ordering edges that connect to this node to the remaining ones before and after
-                            for c in graph
-                                .get_all_components(Some(AnnotationComponentType::Ordering), None)
-                            {
-                                if let Some(gs) = graph.get_graphstorage_as_ref(&c) {
-                                    let mut ingoing = gs.get_ingoing_edges(node_id);
-                                    let mut outgoing = gs.get_outgoing_edges(node_id);
-                                    if let (Some(ingoing), Some(outgoing)) =
-                                        (ingoing.next(), outgoing.next())
-                                    {
-                                        let ingoing = graph
-                                            .get_node_annos()
-                                            .get_value_for_item(&ingoing?, &NODE_NAME_KEY)?
-                                            .context("Missing node name")?;
-                                        let outgoing = graph
-                                            .get_node_annos()
-                                            .get_value_for_item(&outgoing?, &NODE_NAME_KEY)?
-                                            .context("Missing node name")?;
-                                        updates.add_event(UpdateEvent::DeleteEdge {
-                                            source_node: ingoing.to_string(),
-                                            target_node: outgoing.to_string(),
-                                            layer: c.layer.to_string(),
-                                            component_type: c.get_type().to_string(),
-                                            component_name: c.name.to_string(),
-                                        })?;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    action.apply(&graph, &parent_name, &mut updates)?;
                 }
 
                 Ok(updates)
