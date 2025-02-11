@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
@@ -647,6 +646,10 @@ impl Editor for DocumentEditor {
         self.layout_info.first_frame = false;
     }
 
+    fn any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn has_pending_updates(&self) -> bool {
         !self.pending_actions.is_empty()
     }
@@ -676,8 +679,8 @@ impl Editor for DocumentEditor {
             |(graph_updates, state_updates), app| {
                 app.project.add_changeset(graph_updates);
                 if let Some(editor) = app.current_editor.get_mut() {
-                    let editor: &mut dyn Any = editor;
-                    if let Some(editor) = editor.downcast_mut::<DocumentEditor>() {
+                    let downcasted = editor.any_mut().downcast_mut::<DocumentEditor>();
+                    if let Some(editor) = downcasted {
                         for u in state_updates {
                             u(editor);
                         }

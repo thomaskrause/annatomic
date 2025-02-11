@@ -462,6 +462,10 @@ impl Editor for CorpusTree {
         !self.data.changed_keys.is_empty()
     }
 
+    fn any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn apply_pending_updates_for_editor(&mut self) {
         if self.has_pending_updates() {
             // apply all changes as updates to our internal corpus graph
