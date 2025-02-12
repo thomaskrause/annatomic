@@ -2,8 +2,8 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 use clap::Parser;
-use corpus_tree::CorpusTree;
-use editors::DocumentEditor;
+use editors::corpus_tree::CorpusTree;
+use editors::document_editor::DocumentEditor;
 use eframe::IntegrationInfo;
 use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme};
 use graphannis::graph::NodeID;
@@ -13,7 +13,6 @@ use project::Project;
 use serde::{Deserialize, Serialize};
 use views::Editor;
 
-mod corpus_tree;
 mod editors;
 pub(crate) mod job_executor;
 mod messages;

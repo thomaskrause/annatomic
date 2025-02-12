@@ -21,7 +21,7 @@ use graphannis_core::{
     graph::{storage::adjacencylist::AdjacencyListStorage, ANNIS_NS, NODE_NAME_KEY, NODE_TYPE},
 };
 
-use super::{
+use crate::app::{
     job_executor::JobExecutor, views::Editor, Notifier, CHANGE_PENDING_COLOR_DARK,
     CHANGE_PENDING_COLOR_LIGHT,
 };

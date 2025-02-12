@@ -8,10 +8,7 @@ use egui_kittest::{
 };
 use graphannis::model::AnnotationComponentType;
 
-use crate::{
-    app::{messages::Notifier, set_fonts},
-    assert_screenshots,
-};
+use crate::{app::set_fonts, assert_screenshots};
 
 use super::{DocumentEditor, Editor, JobExecutor};
 
@@ -31,7 +28,6 @@ fn create_example_ui(
         .unwrap()
         .unwrap();
     let job = JobExecutor::default();
-    let notifier = Notifier::default();
     let editor =
         DocumentEditor::create_from_graph(document_node, Arc::new(RwLock::new(graph)), job.clone())
             .unwrap();
@@ -50,7 +46,7 @@ fn create_example_ui(
 #[test]
 fn render_token_with_labels() {
     let (mut harness, _) = create_example_ui(
-        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+        &include_bytes!("../../../../tests/data/single_sentence.graphml")[..],
         "single_sentence/zossen",
     );
     harness.run();
@@ -60,7 +56,7 @@ fn render_token_with_labels() {
 #[test]
 fn select_token_range() {
     let (mut harness, editor) = create_example_ui(
-        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+        &include_bytes!("../../../../tests/data/single_sentence.graphml")[..],
         "single_sentence/zossen",
     );
     harness
@@ -83,7 +79,7 @@ fn select_token_range() {
 #[test]
 fn render_segmentation_spans() {
     let (mut harness, _) = create_example_ui(
-        &include_bytes!("../../../tests/data/SegmentationWithGaps.graphml")[..],
+        &include_bytes!("../../../../tests/data/SegmentationWithGaps.graphml")[..],
         "SegmentationWithGaps/doc01",
     );
     harness.set_size(Vec2::new(2100.0, 210.0));
@@ -95,7 +91,7 @@ fn render_segmentation_spans() {
 #[test]
 fn change_segmentation_value() {
     let (mut harness, editor) = create_example_ui(
-        &include_bytes!("../../../tests/data/SegmentationWithGaps.graphml")[..],
+        &include_bytes!("../../../../tests/data/SegmentationWithGaps.graphml")[..],
         "SegmentationWithGaps/doc01",
     );
     harness.set_size(Vec2::new(2100.0, 210.0));
