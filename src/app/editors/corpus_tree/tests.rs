@@ -19,7 +19,7 @@ use graphannis::aql;
 fn show_metadata() {
     let app_state = create_app_with_corpus(
         "single_sentence",
-        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+        &include_bytes!("../../../../tests/data/single_sentence.graphml")[..],
     );
     let (mut harness, app_state) = create_test_harness(app_state);
     harness.run();
@@ -62,7 +62,7 @@ fn query_count(query: &str, app_state: Arc<RwLock<crate::AnnatomicApp>>) -> usiz
 fn undo_redo() {
     let app_state = create_app_with_corpus(
         "single_sentence",
-        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+        &include_bytes!("../../../../tests/data/single_sentence.graphml")[..],
     );
     let (mut harness, app_state) = create_test_harness(app_state);
     harness.run();
@@ -125,7 +125,7 @@ fn undo_redo() {
 fn add_and_delete_entry() {
     let app_state = create_app_with_corpus(
         "single_sentence",
-        &include_bytes!("../../../tests/data/single_sentence.graphml")[..],
+        &include_bytes!("../../../../tests/data/single_sentence.graphml")[..],
     );
     let (mut harness, app_state) = create_test_harness(app_state);
     harness.run();

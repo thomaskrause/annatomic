@@ -2,8 +2,8 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::Result;
 use clap::Parser;
-use corpus_tree::CorpusTree;
-use editors::DocumentEditor;
+use editors::corpus_tree::CorpusTree;
+use editors::document_editor::DocumentEditor;
 use eframe::IntegrationInfo;
 use egui::{Button, Color32, FontData, Key, KeyboardShortcut, Modifiers, RichText, Theme};
 use graphannis::graph::NodeID;
@@ -13,7 +13,6 @@ use project::Project;
 use serde::{Deserialize, Serialize};
 use views::Editor;
 
-mod corpus_tree;
 mod editors;
 pub(crate) mod job_executor;
 mod messages;
@@ -22,6 +21,7 @@ mod project;
 mod tests;
 pub(crate) mod util;
 mod views;
+pub(crate) mod widgets;
 
 pub(crate) const APP_ID: &str = "annatomic";
 pub const QUIT_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::Q);
@@ -294,7 +294,7 @@ impl AnnatomicApp {
 
     fn apply_pending_updates(&mut self) {
         if let Some(editor) = self.current_editor.get_mut() {
-            editor.apply_pending_updates();
+            editor.apply_pending_updates_for_editor();
         }
     }
 
@@ -307,6 +307,12 @@ impl AnnatomicApp {
     }
 
     fn consume_shortcuts(&mut self, ctx: &egui::Context) {
+        // Consume any potential context sensitve shortcuts from the editor
+        if let Some(editor) = self.current_editor.get_mut() {
+            editor.consume_shortcuts(ctx);
+        }
+
+        // Consume all shortcuts from the application itself, which can be active at any time
         if ctx.input_mut(|i| i.consume_shortcut(&QUIT_SHORTCUT)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -386,6 +392,10 @@ impl AnnatomicApp {
                     }
                 });
                 ui.menu_button("Edit", |ui| {
+                    if let Some(editor) = self.current_editor.get_mut() {
+                        editor.add_edit_menu_entries(ui);
+                    }
+
                     if ui
                         .add_enabled(
                             self.project.has_undo(),

@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use graphannis::{graph::GraphStorage, model::AnnotationComponentType, AnnotationGraph};
 use graphannis_core::{
     annostorage::NodeAnnotationStorage,
-    dfs,
+    dfs::CycleSafeDFS,
     graph::{storage::union::UnionEdgeContainer, ANNIS_NS},
     types::{AnnoKey, Component, NodeID},
 };
@@ -90,6 +90,22 @@ impl<'a> TokenHelper<'a> {
         }
     }
 
+    pub fn is_segmentation_token(&self, id: NodeID, seg: &str) -> anyhow::Result<bool> {
+        if self.node_annos.has_value_for_item(&id, &TOKEN_KEY)? {
+            if let Some(gs_ordering) = self.ordering_gs.get(seg) {
+                let part_of_seg_component =
+                    gs_ordering.has_outgoing_edges(id)? || gs_ordering.has_ingoing_edges(id)?;
+                let has_seg_label = !self
+                    .node_annos
+                    .get_all_keys_for_item(&id, None, Some(seg))?
+                    .is_empty();
+                return Ok(part_of_seg_component
+                    || (has_seg_label && gs_ordering.source_nodes().next().is_none()));
+            }
+        }
+        Ok(false)
+    }
+
     pub fn has_outgoing_coverage_edges(&self, id: NodeID) -> anyhow::Result<bool> {
         for c in self.cov_edges.iter() {
             if c.has_outgoing_edges(id)? {
@@ -164,7 +180,7 @@ impl<'a> TokenHelper<'a> {
         Ok(result)
     }
 
-    /// Find all token covered by the given node
+    /// Find all token covered by the given node and sort the result according to the token order.
     pub fn covered_token(&self, node_id: NodeID) -> Result<Vec<NodeID>> {
         let mut result = Vec::default();
         let coverage = UnionEdgeContainer::new(
@@ -173,7 +189,7 @@ impl<'a> TokenHelper<'a> {
                 .map(|gs| gs.as_edgecontainer())
                 .collect_vec(),
         );
-        let it = dfs::CycleSafeDFS::new(&coverage, node_id, 1, usize::MAX);
+        let it = CycleSafeDFS::new(&coverage, node_id, 1, usize::MAX);
         for step in it {
             let step = step?;
             if self.is_token(step.node)? {
@@ -182,8 +198,19 @@ impl<'a> TokenHelper<'a> {
         }
 
         // Sort token by their order
-        if let Some(gs) = self.ordering_gs.get("") {
-            result.sort_by(|a, b| {
+        self.sort_token(&mut result, None)?;
+        Ok(result)
+    }
+
+    pub fn get_ordering_gs(&self, segmentation: Option<&str>) -> Option<Arc<dyn GraphStorage>> {
+        self.ordering_gs
+            .get(segmentation.unwrap_or_default())
+            .cloned()
+    }
+
+    pub fn sort_token(&self, token_ids: &mut [NodeID], segmentation: Option<&str>) -> Result<()> {
+        if let Some(gs) = self.ordering_gs.get(segmentation.unwrap_or_default()) {
+            token_ids.sort_by(|a, b| {
                 if a == b {
                     Ordering::Equal
                 } else if let Ok(connected) = gs.is_connected(*a, *b, 1, std::ops::Bound::Unbounded)
@@ -198,8 +225,120 @@ impl<'a> TokenHelper<'a> {
                 }
             });
         }
+        Ok(())
+    }
 
-        Ok(result)
+    /// Gets the token that comes before the given `node_id`. If a
+    /// `segmentation` is given, this will not be a base token but a
+    /// segmentation node that comes directly before the given node.
+    pub fn get_token_before(
+        &self,
+        node_id: NodeID,
+        segmentation: Option<&str>,
+    ) -> Result<Option<NodeID>> {
+        // Get all sorted covered token for this node
+        let covered_token = if self.is_token(node_id)? {
+            vec![node_id]
+        } else {
+            self.covered_token(node_id)?
+        };
+
+        // Find the token node before the left-most covered token
+        if let Some(first_covered_token) = covered_token.first() {
+            let gs_tok = self
+                .ordering_gs
+                .get("")
+                .context("Missing base token graph storage component")?;
+            let dfs = CycleSafeDFS::new_inverse(
+                gs_tok.as_edgecontainer(),
+                *first_covered_token,
+                1,
+                usize::MAX,
+            );
+            for step in dfs {
+                let step = step?;
+                let token_before = step.node;
+
+                if let Some(segmentation) = segmentation {
+                    // If a segmentation node is requested as result, find the one covering this token
+                    let mut segmentation_nodes = Vec::new();
+                    for gs_cov in &self.cov_edges {
+                        for n in gs_cov.get_ingoing_edges(token_before) {
+                            let n = n?;
+                            if self.is_segmentation_token(n, segmentation)? {
+                                segmentation_nodes.push(n);
+                            }
+                        }
+                    }
+
+                    if !segmentation_nodes.is_empty() {
+                        self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
+                        return Ok(segmentation_nodes.last().copied());
+                    }
+                } else {
+                    return Ok(Some(token_before));
+                }
+            }
+
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Gets the token that comes after the given `node_id`. If a `segmentation`
+    /// is given, this will not be a base token but a segmentation node that
+    /// comes directly after the given node.
+    pub fn get_token_after(
+        &self,
+        node_id: NodeID,
+        segmentation: Option<&str>,
+    ) -> Result<Option<NodeID>> {
+        // Get all sorted covered token for this node
+        let covered_token = if self.is_token(node_id)? {
+            vec![node_id]
+        } else {
+            self.covered_token(node_id)?
+        };
+
+        // Find the token node after the right-most covered token
+        if let Some(last_covered_token) = covered_token.last() {
+            let gs_tok = self
+                .ordering_gs
+                .get("")
+                .context("Missing base token graph storage component")?;
+
+            let dfs = CycleSafeDFS::new(
+                gs_tok.as_edgecontainer(),
+                *last_covered_token,
+                1,
+                usize::MAX,
+            );
+            for step in dfs {
+                let step = step?;
+                let token_after = step.node;
+
+                if let Some(segmentation) = segmentation {
+                    // If a segmentation node is requested as result, find the one covering this token
+                    let mut segmentation_nodes = Vec::new();
+                    for gs_cov in &self.cov_edges {
+                        for n in gs_cov.get_ingoing_edges(token_after) {
+                            let n = n?;
+                            if self.is_segmentation_token(n, segmentation)? {
+                                segmentation_nodes.push(n);
+                            }
+                        }
+                    }
+                    if !segmentation_nodes.is_empty() {
+                        self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
+                        return Ok(segmentation_nodes.first().copied());
+                    }
+                } else {
+                    return Ok(Some(token_after));
+                }
+            }
+        }
+        Ok(None)
     }
 }
 
