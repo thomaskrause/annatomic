@@ -383,7 +383,6 @@ impl Editor for DocumentEditor {
                         .min_token_width
                         .get(self.token[token_position].start)
                         .copied();
-
                     let token_start = self.token[token_position].start;
                     let response = TokenEditor::with_min_width(
                         &self.token[token_position],

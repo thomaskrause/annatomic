@@ -5,7 +5,7 @@ set -e
 
 # Run static code checks
 cargo fmt --check
-cargo clippy
+cargo clippy -- --deny warnings
 
 # Execute tests and calculate the code coverage both as lcov and HTML report
 rm -f target/llvm-cov/tests.lcov
