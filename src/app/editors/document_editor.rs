@@ -274,9 +274,6 @@ impl DocumentEditor {
         if let Some((seg_name, _token)) = self.segmentations.iter().nth(layer_idx.saturating_sub(1))
         {
             if !self.selected_nodes.is_empty() {
-                self.layout_info.valid = false;
-                self.layout_info.min_token_width.clear();
-
                 // Apply changes to internal data model
                 let mut selected_token_indices: Vec<_> = self
                     .selected_nodes
@@ -386,6 +383,7 @@ impl Editor for DocumentEditor {
                         .min_token_width
                         .get(self.token[token_position].start)
                         .copied();
+
                     let token_start = self.token[token_position].start;
                     let response = TokenEditor::with_min_width(
                         &self.token[token_position],
