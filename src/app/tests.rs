@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use super::*;
 
 /// 30 Seconds, since th tests are run with 4fps
-const MAX_WAIT_STEPS: usize = 120;
+pub const MAX_WAIT_STEPS: usize = 120;
 
 pub(crate) fn create_app_with_corpus<R: Read, S: Into<String>>(
     corpus_name: S,

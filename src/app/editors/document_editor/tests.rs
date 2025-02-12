@@ -8,7 +8,15 @@ use egui_kittest::{
 };
 use graphannis::model::AnnotationComponentType;
 
-use crate::{app::set_fonts, assert_screenshots};
+use crate::{
+    app::{
+        set_fonts,
+        tests::{
+            create_app_with_corpus, create_test_harness, wait_for_editor, wait_until_jobs_finished,
+        },
+    },
+    assert_screenshots,
+};
 
 use super::{DocumentEditor, Editor, JobExecutor};
 
@@ -116,6 +124,82 @@ fn change_segmentation_value() {
     harness.run();
 
     harness.snapshot("change_segmentation_value");
+}
+
+#[test]
+fn delete_and_add_segmentation() {
+    let app_state = create_app_with_corpus(
+        "SegmentationWithGaps",
+        &include_bytes!("../../../../tests/data/SegmentationWithGaps.graphml")[..],
+    );
+    let (mut harness, app_state) = create_test_harness(app_state);
+    harness.set_size(Vec2::new(1200.0, 600.0));
+    harness.run();
+
+    // Open the document editor
+    harness.get_by_label("SegmentationWithGaps").click();
+    wait_for_editor(&mut harness, app_state.clone());
+    harness.get_by_label("SegmentationWithGaps/doc01").click();
+    harness.run();
+    harness.get_by_label("Open selected in editor").click();
+    harness.run();
+    wait_for_editor(&mut harness, app_state.clone());
+
+    // Manually select the nodes to delete
+    {
+        let mut app_state = app_state.write();
+        let editor = app_state
+            .current_editor
+            .get_mut()
+            .unwrap()
+            .any_mut()
+            .downcast_mut::<DocumentEditor>()
+            .unwrap();
+        editor.selected_nodes.clear();
+        // example
+        editor
+            .selected_nodes
+            .insert("SegmentationWithGaps/doc01#sSpan32".to_string());
+        // of
+        editor
+            .selected_nodes
+            .insert("SegmentationWithGaps/doc01#sSpan33".to_string());
+        // a
+        editor
+            .selected_nodes
+            .insert("SegmentationWithGaps/doc01#sSpan34".to_string());
+        // ſub⸗
+        editor
+            .selected_nodes
+            .insert("SegmentationWithGaps/doc01#sSpan35".to_string());
+
+        editor.delete_selected_nodes();
+    }
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    {
+        let mut app_state = app_state.write();
+        let editor = app_state
+            .current_editor
+            .get_mut()
+            .unwrap()
+            .any_mut()
+            .downcast_mut::<DocumentEditor>()
+            .unwrap();
+        // Select the token that the new segmentation node should cover
+        editor.selected_nodes.clear();
+        editor
+            .selected_nodes
+            .insert("SegmentationWithGaps/doc01#tok_6".to_string());
+        editor
+            .selected_nodes
+            .insert("SegmentationWithGaps/doc01#tok_7".to_string());
+        // Trigger adding the segmentation node
+        editor.add_segmentation_for_selection(1);
+    }
+    wait_until_jobs_finished(&mut harness, app_state.clone());
+    harness.run();
+
+    harness.snapshot("delete_and_add_segmentation");
 }
 
 fn get_text_input<'a>(harness: &'a Harness<'_>, value: &'a str) -> Node<'a> {

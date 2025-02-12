@@ -185,13 +185,13 @@ impl Widget for TokenEditor<'_> {
             .interact(Sense::hover());
         let widget_label = if self.selected {
             format!(
-                "Selected token ranging from {} to {} with label \"{}\"",
-                self.token.start, self.token.end, self.value
+                "Selected token ranging from {} to {} ({})",
+                self.token.start, self.token.end, self.token.node_name
             )
         } else {
             format!(
-                "Token ranging from {} to {} with label \"{}\"",
-                self.token.start, self.token.end, self.value
+                "Token ranging from {} to {} ({})",
+                self.token.start, self.token.end, self.token.node_name
             )
         };
         response.widget_info(move || {
