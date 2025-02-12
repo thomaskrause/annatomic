@@ -40,231 +40,28 @@ struct LayoutInfo {
 #[derive(Clone)]
 enum EditorActions {
     ModifySegmentationValue {
-        node_id: NodeID,
+        node_name: String,
         new_value: String,
     },
     AddSegmentationSpan {
         segmentation: String,
-        selected_nodes: HashSet<NodeID>,
+        selected_token: HashSet<String>,
     },
     DeleteNode {
-        node_id: NodeID,
+        node_name: String,
     },
 }
 
 type StateUpdateFn = Box<dyn FnOnce(&mut DocumentEditor) + Send + Sync>;
-
-impl EditorActions {
-    fn apply(
-        self,
-        graph: &AnnotationGraph,
-        parent_name: &str,
-        updates: &mut GraphUpdate,
-    ) -> anyhow::Result<StateUpdateFn> {
-        let state_update: StateUpdateFn = match self {
-            EditorActions::ModifySegmentationValue { node_id, new_value } => {
-                let node_name = graph
-                    .get_node_annos()
-                    .get_value_for_item(&node_id, &NODE_NAME_KEY)?
-                    .context("Missing node name")?;
-
-                updates.add_event(UpdateEvent::DeleteNodeLabel {
-                    node_name: node_name.to_string(),
-                    anno_ns: TOKEN_KEY.ns.clone().into(),
-                    anno_name: TOKEN_KEY.name.clone().into(),
-                })?;
-                updates.add_event(UpdateEvent::AddNodeLabel {
-                    node_name: node_name.to_string(),
-                    anno_ns: TOKEN_KEY.ns.clone().into(),
-                    anno_name: TOKEN_KEY.name.clone().into(),
-                    anno_value: new_value.to_string(),
-                })?;
-                Box::new(|_| {})
-            }
-            EditorActions::AddSegmentationSpan {
-                segmentation,
-                selected_nodes,
-            } => {
-                let new_node_name = format!(
-                    "{}#{}",
-                    &parent_name,
-                    graph
-                        .get_node_annos()
-                        .get_largest_item()?
-                        .map(|id| id + 1)
-                        .unwrap_or_default()
-                );
-                let tok_helper = TokenHelper::new(graph)?;
-                let mut covered_token = Vec::new();
-                for n in selected_nodes {
-                    if tok_helper.is_token(n)? {
-                        covered_token.push(n);
-                    }
-                }
-                tok_helper.sort_token(&mut covered_token, None)?;
-
-                updates.add_event(UpdateEvent::AddNode {
-                    node_name: new_node_name.clone(),
-                    node_type: "node".to_string(),
-                })?;
-                updates.add_event(UpdateEvent::AddEdge {
-                    source_node: new_node_name.clone(),
-                    target_node: parent_name.to_string(),
-                    layer: ANNIS_NS.to_string(),
-                    component_type: AnnotationComponentType::PartOf.to_string(),
-                    component_name: "".to_string(),
-                })?;
-                updates.add_event(UpdateEvent::AddNodeLabel {
-                    node_name: new_node_name.clone(),
-                    anno_ns: TOKEN_KEY.ns.to_string(),
-                    anno_name: TOKEN_KEY.name.to_string(),
-                    anno_value: String::default(),
-                })?;
-                updates.add_event(UpdateEvent::AddNodeLabel {
-                    node_name: new_node_name.clone(),
-                    anno_ns: ANNIS_NS.to_string(),
-                    anno_name: segmentation.clone(),
-                    anno_value: String::default(),
-                })?;
-
-                for target_node in &covered_token {
-                    let target_node_name = graph
-                        .get_node_annos()
-                        .get_value_for_item(target_node, &NODE_NAME_KEY)?
-                        .context("Missing node name")?;
-                    updates.add_event(UpdateEvent::AddEdge {
-                        source_node: new_node_name.clone(),
-                        target_node: target_node_name.to_string(),
-                        layer: "".to_string(),
-                        component_type: AnnotationComponentType::Coverage.to_string(),
-                        component_name: "".to_string(),
-                    })?;
-                }
-                // Find the segmentations node before and after the selection to add the Ordering edges
-                let matching_ordering_components = graph.get_all_components(
-                    Some(AnnotationComponentType::Ordering),
-                    Some(&segmentation),
-                );
-                if let Some(ordering_component) = matching_ordering_components.first() {
-                    if let Some(first_covered) = covered_token.first() {
-                        if let Some(token_before) =
-                            tok_helper.get_token_before(*first_covered, Some(&segmentation))?
-                        {
-                            let token_before = graph
-                                .get_node_annos()
-                                .get_value_for_item(&token_before, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-                            let first_covered = graph
-                                .get_node_annos()
-                                .get_value_for_item(first_covered, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-
-                            updates.add_event(UpdateEvent::AddEdge {
-                                source_node: token_before.to_string(),
-                                target_node: first_covered.to_string(),
-                                layer: ordering_component.layer.to_string(),
-                                component_type: ordering_component.get_type().to_string(),
-                                component_name: ordering_component.name.to_string(),
-                            })?;
-                        }
-                    }
-                    if let Some(last_covered) = covered_token.last() {
-                        if let Some(token_after) =
-                            tok_helper.get_token_after(*last_covered, Some(&segmentation))?
-                        {
-                            let last_covered = graph
-                                .get_node_annos()
-                                .get_value_for_item(last_covered, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-                            let token_after = graph
-                                .get_node_annos()
-                                .get_value_for_item(&token_after, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-
-                            updates.add_event(UpdateEvent::AddEdge {
-                                source_node: last_covered.to_string(),
-                                target_node: token_after.to_string(),
-                                layer: ordering_component.layer.to_string(),
-                                component_type: ordering_component.get_type().to_string(),
-                                component_name: ordering_component.name.to_string(),
-                            })?;
-                        }
-                    }
-                }
-                // Regenerate the token node list for this segmentation when updating the editor state
-
-                let mut token_to_index = HashMap::new();
-                let token_ids = tok_helper.get_ordered_token(parent_name, None)?;
-                for (idx, node_id) in token_ids.iter().enumerate() {
-                    token_to_index.insert(*node_id, idx);
-                }
-                let token_ids = tok_helper.get_ordered_token(parent_name, Some(&segmentation))?;
-                let mut new_segmentation_tokens = Vec::new();
-                for node_id in token_ids.iter() {
-                    let covered = tok_helper.covered_token(*node_id).unwrap_or_default();
-                    let start = covered.first().and_then(|t| token_to_index.get(t));
-                    let end = covered.last().and_then(|t| token_to_index.get(t));
-                    if let (Some(start), Some(end)) = (start, end) {
-                        if let Ok(t) = Token::from_graph(*node_id, *start, *end, graph) {
-                            new_segmentation_tokens.push(t);
-                        }
-                    }
-                }
-                Box::new(move |editor| {
-                    editor.layout_info.valid = false;
-                    editor.layout_info.min_token_width.clear();
-                    editor
-                        .segmentations
-                        .insert(segmentation.to_string(), new_segmentation_tokens);
-                })
-            }
-            EditorActions::DeleteNode { node_id } => {
-                let node_name = graph
-                    .get_node_annos()
-                    .get_value_for_item(&node_id, &NODE_NAME_KEY)?
-                    .context("Missing node name")?;
-                updates.add_event(UpdateEvent::DeleteNode {
-                    node_name: node_name.to_string(),
-                })?;
-                // Bridge any ordering edges that connect to this node to the remaining ones before and after
-                for c in graph.get_all_components(Some(AnnotationComponentType::Ordering), None) {
-                    if let Some(gs) = graph.get_graphstorage_as_ref(&c) {
-                        let mut ingoing = gs.get_ingoing_edges(node_id);
-                        let mut outgoing = gs.get_outgoing_edges(node_id);
-                        if let (Some(ingoing), Some(outgoing)) = (ingoing.next(), outgoing.next()) {
-                            let ingoing = graph
-                                .get_node_annos()
-                                .get_value_for_item(&ingoing?, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-                            let outgoing = graph
-                                .get_node_annos()
-                                .get_value_for_item(&outgoing?, &NODE_NAME_KEY)?
-                                .context("Missing node name")?;
-                            updates.add_event(UpdateEvent::DeleteEdge {
-                                source_node: ingoing.to_string(),
-                                target_node: outgoing.to_string(),
-                                layer: c.layer.to_string(),
-                                component_type: c.get_type().to_string(),
-                                component_name: c.name.to_string(),
-                            })?;
-                        }
-                    }
-                }
-                Box::new(|_| {})
-            }
-        };
-        Ok(state_update)
-    }
-}
 
 #[derive(Clone)]
 pub(crate) struct DocumentEditor {
     parent_name: String,
     graph: Arc<RwLock<AnnotationGraph>>,
     token: Vec<Token>,
-    token_index_by_id: HashMap<NodeID, usize>,
-    selected_nodes: HashSet<NodeID>,
-    currently_edited_node: Option<NodeID>,
+    token_index_by_name: HashMap<String, usize>,
+    selected_nodes: HashSet<String>,
+    currently_edited_node: Option<String>,
     current_edited_value: String,
     pending_actions: Vec<EditorActions>,
     segmentations: BTreeMap<String, Vec<Token>>,
@@ -323,17 +120,17 @@ impl DocumentEditor {
         }
         let nr_token = token.len();
 
-        let token_index_by_id = token
+        let token_index_by_name = token
             .iter()
             .enumerate()
-            .map(|(idx, t)| (t.node_id, idx))
+            .map(|(idx, t)| (t.node_name.clone(), idx))
             .collect();
 
         Ok(Self {
             parent_name,
             graph,
             token,
-            token_index_by_id,
+            token_index_by_name,
             layout_info: LayoutInfo {
                 valid: false,
                 first_frame: true,
@@ -377,7 +174,7 @@ impl DocumentEditor {
                     let segmentation_rectangle = Rect::from_min_max(min_pos, max_pos);
 
                     if ui.is_rect_visible(segmentation_rectangle) {
-                        if self.currently_edited_node == Some(t.node_id) {
+                        if self.currently_edited_node == Some(t.node_name.clone()) {
                             let segmentation_editor =
                                 TextEdit::singleline(&mut self.current_edited_value);
                             let segmentation_editor =
@@ -386,7 +183,7 @@ impl DocumentEditor {
                                 segmentation_editor.rect.height().max(max_node_height);
                             if segmentation_editor.lost_focus() {
                                 self.currently_edited_node = None;
-                                self.selected_nodes.remove(&t.node_id);
+                                self.selected_nodes.remove(&t.node_name);
                                 let new_value = self.current_edited_value.clone();
                                 let old_value = t.labels.get(&TOKEN_KEY);
                                 if Some(&new_value) != old_value {
@@ -396,14 +193,14 @@ impl DocumentEditor {
                                     self.layout_info.valid = false;
                                     self.pending_actions.push(
                                         EditorActions::ModifySegmentationValue {
-                                            node_id: t.node_id,
+                                            node_name: t.node_name.clone(),
                                             new_value: new_value.clone(),
                                         },
                                     );
                                 }
                             }
                         } else {
-                            let selected = self.selected_nodes.contains(&t.node_id);
+                            let selected = self.selected_nodes.contains(&t.node_name);
                             let segmentation_editor = TokenEditor::with_exact_width(
                                 t,
                                 selected,
@@ -417,7 +214,7 @@ impl DocumentEditor {
                             if segmentation_editor.clicked() {
                                 if selected {
                                     // Already selected, allow editing
-                                    self.currently_edited_node = Some(t.node_id);
+                                    self.currently_edited_node = Some(t.node_name.clone());
                                     self.current_edited_value =
                                         t.labels.get(&TOKEN_KEY).cloned().unwrap_or_default();
                                 } else {
@@ -426,7 +223,7 @@ impl DocumentEditor {
                                         self.selected_nodes.clear();
                                     }
                                     // Select first before it can be edited
-                                    self.selected_nodes.insert(t.node_id);
+                                    self.selected_nodes.insert(t.node_name.clone());
                                 }
                             }
                             let span_text_width = (segmentation_editor.rect.width()
@@ -452,22 +249,22 @@ impl DocumentEditor {
         let mut selected_token_indices: BTreeSet<_> = self
             .selected_nodes
             .iter()
-            .filter_map(|selected_node| self.token_index_by_id.get(selected_node))
+            .filter_map(|selected_node| self.token_index_by_name.get(selected_node))
             .copied()
             .collect();
         let after = selected_token_indices.split_off(&token_position);
 
         if let Some(after) = after.first() {
             for i in token_position..*after {
-                self.selected_nodes.insert(self.token[i].node_id);
+                self.selected_nodes.insert(self.token[i].node_name.clone());
             }
         } else if let Some(before) = selected_token_indices.last() {
             for i in *before..token_position {
-                self.selected_nodes.insert(self.token[i].node_id);
+                self.selected_nodes.insert(self.token[i].node_name.clone());
             }
         }
         self.selected_nodes
-            .insert(self.token[token_position].node_id);
+            .insert(self.token[token_position].node_name.clone());
     }
 
     /// Adds an empty segmentation node that spans the currently selected token.
@@ -484,7 +281,7 @@ impl DocumentEditor {
                 let mut selected_token_indices: Vec<_> = self
                     .selected_nodes
                     .iter()
-                    .filter_map(|n| self.token_index_by_id.get(n))
+                    .filter_map(|n| self.token_index_by_name.get(n))
                     .copied()
                     .collect();
                 selected_token_indices.sort();
@@ -492,15 +289,25 @@ impl DocumentEditor {
                     let graph = self.graph.read();
                     if let Ok(tok_helper) = TokenHelper::new(&graph) {
                         // Schedule an update of the underlaying graph
+                        let selected_token: HashSet<_> = self
+                            .selected_nodes
+                            .iter()
+                            .filter(|node_name| {
+                                if let Ok(Some(node_id)) =
+                                    graph.get_node_annos().get_node_id_from_name(node_name)
+                                {
+                                    tok_helper.is_token(node_id).unwrap_or(false)
+                                } else {
+                                    false
+                                }
+                            })
+                            .cloned()
+                            .collect();
+
                         self.pending_actions
                             .push(EditorActions::AddSegmentationSpan {
                                 segmentation: seg_name.clone(),
-                                selected_nodes: self
-                                    .selected_nodes
-                                    .iter()
-                                    .copied()
-                                    .filter(|n| tok_helper.is_token(*n).unwrap_or(false))
-                                    .collect(),
+                                selected_token,
                             });
                     }
                 }
@@ -512,11 +319,12 @@ impl DocumentEditor {
     fn delete_selected_nodes(&mut self) {
         self.layout_info.valid = false;
         for (_, segmentation_token) in self.segmentations.iter_mut() {
-            segmentation_token.retain(|t| !self.selected_nodes.contains(&t.node_id));
+            segmentation_token.retain(|t| !self.selected_nodes.contains(&t.node_name));
         }
         for n in self.selected_nodes.iter() {
-            self.pending_actions
-                .push(EditorActions::DeleteNode { node_id: *n });
+            self.pending_actions.push(EditorActions::DeleteNode {
+                node_name: n.clone(),
+            });
         }
         self.selected_nodes.clear();
         self.apply_pending_updates_for_editor();
@@ -572,7 +380,7 @@ impl Editor for DocumentEditor {
                 }
 
                 for token_position in first_visible_token..=last_visible_token {
-                    let token_node_id = self.token[token_position].node_id;
+                    let token_node_name = &self.token[token_position].node_name;
                     let minimal_token_width = self
                         .layout_info
                         .min_token_width
@@ -581,7 +389,7 @@ impl Editor for DocumentEditor {
                     let token_start = self.token[token_position].start;
                     let response = TokenEditor::with_min_width(
                         &self.token[token_position],
-                        self.selected_nodes.contains(&token_node_id),
+                        self.selected_nodes.contains(token_node_name),
                         minimal_token_width,
                     )
                     .ui(ui);
@@ -590,17 +398,17 @@ impl Editor for DocumentEditor {
                         if shift_pressed {
                             self.select_range(token_position);
                         } else if ui.ctx().input(|i| i.modifiers.command_only()) {
-                            if self.selected_nodes.contains(&token_node_id) {
+                            if self.selected_nodes.contains(token_node_name) {
                                 // Unselect
-                                self.selected_nodes.remove(&token_node_id);
+                                self.selected_nodes.remove(token_node_name);
                             } else {
                                 // Allow selection of multiple items
-                                self.selected_nodes.insert(token_node_id);
+                                self.selected_nodes.insert(token_node_name.clone());
                             }
                         } else {
                             // Select only one node
                             self.selected_nodes.clear();
-                            self.selected_nodes.insert(token_node_id);
+                            self.selected_nodes.insert(token_node_name.clone());
                         }
                     }
                     let token_rect = response.rect;
@@ -722,4 +530,231 @@ impl Editor for DocumentEditor {
             self.delete_selected_nodes();
         }
     }
+}
+
+impl EditorActions {
+    fn apply(
+        self,
+        graph: &AnnotationGraph,
+        parent_name: &str,
+        updates: &mut GraphUpdate,
+    ) -> anyhow::Result<StateUpdateFn> {
+        let state_update: StateUpdateFn = match self {
+            EditorActions::ModifySegmentationValue {
+                node_name,
+                new_value,
+            } => {
+                updates.add_event(UpdateEvent::DeleteNodeLabel {
+                    node_name: node_name.to_string(),
+                    anno_ns: TOKEN_KEY.ns.clone().into(),
+                    anno_name: TOKEN_KEY.name.clone().into(),
+                })?;
+                updates.add_event(UpdateEvent::AddNodeLabel {
+                    node_name: node_name.to_string(),
+                    anno_ns: TOKEN_KEY.ns.clone().into(),
+                    anno_name: TOKEN_KEY.name.clone().into(),
+                    anno_value: new_value.to_string(),
+                })?;
+                Box::new(|_| {})
+            }
+            EditorActions::AddSegmentationSpan {
+                segmentation,
+                selected_token: selected_nodes,
+            } => apply_add_segmentation(graph, parent_name, updates, segmentation, selected_nodes)?,
+            EditorActions::DeleteNode { node_name } => {
+                let node_id = graph
+                    .get_node_annos()
+                    .get_node_id_from_name(&node_name)?
+                    .context("Missing node ID")?;
+                updates.add_event(UpdateEvent::DeleteNode {
+                    node_name: node_name.to_string(),
+                })?;
+                // Bridge any ordering edges that connect to this node to the remaining ones before and after
+                for c in graph.get_all_components(Some(AnnotationComponentType::Ordering), None) {
+                    if let Some(gs) = graph.get_graphstorage_as_ref(&c) {
+                        let mut ingoing = gs.get_ingoing_edges(node_id);
+                        let mut outgoing = gs.get_outgoing_edges(node_id);
+                        if let (Some(ingoing), Some(outgoing)) = (ingoing.next(), outgoing.next()) {
+                            let ingoing = graph
+                                .get_node_annos()
+                                .get_value_for_item(&ingoing?, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+                            let outgoing = graph
+                                .get_node_annos()
+                                .get_value_for_item(&outgoing?, &NODE_NAME_KEY)?
+                                .context("Missing node name")?;
+                            updates.add_event(UpdateEvent::DeleteEdge {
+                                source_node: ingoing.to_string(),
+                                target_node: outgoing.to_string(),
+                                layer: c.layer.to_string(),
+                                component_type: c.get_type().to_string(),
+                                component_name: c.name.to_string(),
+                            })?;
+                        }
+                    }
+                }
+                Box::new(|_| {})
+            }
+        };
+        Ok(state_update)
+    }
+}
+
+fn apply_add_segmentation(
+    graph: &AnnotationGraph,
+    parent_name: &str,
+    updates: &mut GraphUpdate,
+    segmentation: String,
+    selected_token: HashSet<String>,
+) -> anyhow::Result<StateUpdateFn> {
+    let new_node_name = format!(
+        "{}#{}",
+        &parent_name,
+        graph
+            .get_node_annos()
+            .get_largest_item()?
+            .map(|id| id + 1)
+            .unwrap_or_default()
+    );
+    let tok_helper = TokenHelper::new(graph)?;
+    let mut sorted_covered_token = Vec::new();
+    for node_name in selected_token {
+        let n = graph
+            .get_node_annos()
+            .get_node_id_from_name(&node_name)?
+            .context("Missing node id")?;
+        sorted_covered_token.push((n, node_name));
+    }
+    if let Some(gs) = tok_helper.get_ordering_gs(None) {
+        sorted_covered_token.sort_by(|a, b| {
+            if a == b {
+                Ordering::Equal
+            } else if let Ok(connected) = gs.is_connected(a.0, b.0, 1, std::ops::Bound::Unbounded) {
+                if connected {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            } else {
+                Ordering::Less
+            }
+        });
+    }
+
+    updates.add_event(UpdateEvent::AddNode {
+        node_name: new_node_name.clone(),
+        node_type: "node".to_string(),
+    })?;
+    updates.add_event(UpdateEvent::AddEdge {
+        source_node: new_node_name.clone(),
+        target_node: parent_name.to_string(),
+        layer: ANNIS_NS.to_string(),
+        component_type: AnnotationComponentType::PartOf.to_string(),
+        component_name: "".to_string(),
+    })?;
+    updates.add_event(UpdateEvent::AddNodeLabel {
+        node_name: new_node_name.clone(),
+        anno_ns: TOKEN_KEY.ns.to_string(),
+        anno_name: TOKEN_KEY.name.to_string(),
+        anno_value: String::default(),
+    })?;
+    updates.add_event(UpdateEvent::AddNodeLabel {
+        node_name: new_node_name.clone(),
+        anno_ns: ANNIS_NS.to_string(),
+        anno_name: segmentation.clone(),
+        anno_value: String::default(),
+    })?;
+
+    for target_node in &sorted_covered_token {
+        updates.add_event(UpdateEvent::AddEdge {
+            source_node: new_node_name.clone(),
+            target_node: target_node.1.to_string(),
+            layer: "".to_string(),
+            component_type: AnnotationComponentType::Coverage.to_string(),
+            component_name: "".to_string(),
+        })?;
+    }
+    let first_covered = sorted_covered_token.first().cloned();
+    let last_covered = sorted_covered_token.last().cloned();
+
+    // Find the segmentations node before and after the selection to add the Ordering edges
+    let matching_ordering_components =
+        graph.get_all_components(Some(AnnotationComponentType::Ordering), Some(&segmentation));
+    if let Some(ordering_component) = matching_ordering_components.first() {
+        if let Some(first_covered) = &first_covered {
+            if let Some(token_before) =
+                tok_helper.get_token_before(first_covered.0, Some(&segmentation))?
+            {
+                let token_before = graph
+                    .get_node_annos()
+                    .get_value_for_item(&token_before, &NODE_NAME_KEY)?
+                    .context("Missing node name")?;
+
+                updates.add_event(UpdateEvent::AddEdge {
+                    source_node: token_before.to_string(),
+                    target_node: first_covered.1.clone(),
+                    layer: ordering_component.layer.to_string(),
+                    component_type: ordering_component.get_type().to_string(),
+                    component_name: ordering_component.name.to_string(),
+                })?;
+            }
+        }
+        if let Some(last_covered) = &last_covered {
+            if let Some(token_after) =
+                tok_helper.get_token_after(last_covered.0, Some(&segmentation))?
+            {
+                let token_after = graph
+                    .get_node_annos()
+                    .get_value_for_item(&token_after, &NODE_NAME_KEY)?
+                    .context("Missing node name")?;
+
+                updates.add_event(UpdateEvent::AddEdge {
+                    source_node: last_covered.1.clone(),
+                    target_node: token_after.to_string(),
+                    layer: ordering_component.layer.to_string(),
+                    component_type: ordering_component.get_type().to_string(),
+                    component_name: ordering_component.name.to_string(),
+                })?;
+            }
+        }
+    }
+
+    let state_updater = Box::new(move |editor: &mut DocumentEditor| {
+        let base_token_length = editor
+            .segmentations
+            .get("")
+            .map(|token| token.len())
+            .unwrap_or(0);
+        if let (Some(seg_token), Some(first_covered), Some(last_covered)) = (
+            editor.segmentations.get_mut(&segmentation),
+            first_covered,
+            last_covered,
+        ) {
+            // Insert the newly generated segmentation token at the approbiate position
+            let first_covered_idx = editor
+                .token_index_by_name
+                .get(&first_covered.1)
+                .copied()
+                .unwrap_or(0);
+
+            let last_covered_idx = editor
+                .token_index_by_name
+                .get(&last_covered.1)
+                .copied()
+                .unwrap_or(base_token_length);
+            let mut new_token_labels = BTreeMap::new();
+            new_token_labels.insert(TOKEN_KEY.as_ref().clone(), String::default());
+            let new_token = Token {
+                node_name: new_node_name.clone(),
+                start: first_covered_idx,
+                end: last_covered_idx,
+                labels: new_token_labels,
+            };
+            match seg_token.binary_search_by(|probe| probe.end.cmp(&first_covered_idx)) {
+                Ok(idx) => seg_token.insert(idx + 1, new_token),
+                Err(idx) => seg_token.insert(idx, new_token),
+            }
+        }
+    });
+    Ok(state_updater)
 }

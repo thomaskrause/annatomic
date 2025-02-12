@@ -186,6 +186,12 @@ impl<'a> TokenHelper<'a> {
         Ok(result)
     }
 
+    pub fn get_ordering_gs(&self, segmentation: Option<&str>) -> Option<Arc<dyn GraphStorage>> {
+        self.ordering_gs
+            .get(segmentation.unwrap_or_default())
+            .cloned()
+    }
+
     pub fn sort_token(&self, token_ids: &mut [NodeID], segmentation: Option<&str>) -> Result<()> {
         if let Some(gs) = self.ordering_gs.get(segmentation.unwrap_or_default()) {
             token_ids.sort_by(|a, b| {

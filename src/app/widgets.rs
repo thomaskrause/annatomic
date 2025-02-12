@@ -1,12 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use egui::{Frame, Label, RichText, Sense, Widget, WidgetInfo};
 use graphannis::{
     graph::{AnnoKey, NodeID},
     AnnotationGraph,
 };
-use graphannis_core::graph::ANNIS_NS;
+use graphannis_core::graph::{ANNIS_NS, NODE_NAME_KEY};
 use lazy_static::lazy_static;
 
 use super::util::{make_whitespace_visible, token_helper::TOKEN_KEY};
@@ -24,7 +24,7 @@ lazy_static! {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Token {
-    pub node_id: NodeID,
+    pub node_name: String,
     pub start: usize,
     pub end: usize,
     pub labels: BTreeMap<AnnoKey, String>,
@@ -37,11 +37,15 @@ impl Token {
         graph: &AnnotationGraph,
     ) -> Result<Self> {
         let mut labels = BTreeMap::new();
+        let node_name = graph
+            .get_node_annos()
+            .get_value_for_item(&node_id, &NODE_NAME_KEY)?
+            .with_context(|| format!("No node name for node with id {node_id}"))?;
         for anno in graph.get_node_annos().get_annotations_for_item(&node_id)? {
             labels.insert(anno.key, anno.val.to_string());
         }
         Ok(Token {
-            node_id,
+            node_name: node_name.to_string(),
             start,
             end,
             labels,
