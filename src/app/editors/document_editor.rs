@@ -16,7 +16,7 @@ use egui::{
     TextEdit, Ui, Widget,
 };
 use graphannis::{
-    graph::NodeID,
+    graph::{AnnoKey, NodeID},
     model::AnnotationComponentType,
     update::{GraphUpdate, UpdateEvent},
     AnnotationGraph,
@@ -668,7 +668,7 @@ fn apply_add_segmentation(
     for target_node in &sorted_covered_token {
         updates.add_event(UpdateEvent::AddEdge {
             source_node: new_node_name.clone(),
-            target_node: target_node.1.to_string(),
+            target_node: target_node.1.clone(),
             layer: "".to_string(),
             component_type: AnnotationComponentType::Coverage.to_string(),
             component_name: "".to_string(),
@@ -692,7 +692,7 @@ fn apply_add_segmentation(
 
                 updates.add_event(UpdateEvent::AddEdge {
                     source_node: token_before.to_string(),
-                    target_node: first_covered.1.clone(),
+                    target_node: new_node_name.clone(),
                     layer: ordering_component.layer.to_string(),
                     component_type: ordering_component.get_type().to_string(),
                     component_name: ordering_component.name.to_string(),
@@ -709,7 +709,7 @@ fn apply_add_segmentation(
                     .context("Missing node name")?;
 
                 updates.add_event(UpdateEvent::AddEdge {
-                    source_node: last_covered.1.clone(),
+                    source_node: new_node_name.clone(),
                     target_node: token_after.to_string(),
                     layer: ordering_component.layer.to_string(),
                     component_type: ordering_component.get_type().to_string(),
@@ -744,6 +744,13 @@ fn apply_add_segmentation(
                 .unwrap_or(base_token_length);
             let mut new_token_labels = BTreeMap::new();
             new_token_labels.insert(TOKEN_KEY.as_ref().clone(), String::default());
+            new_token_labels.insert(
+                AnnoKey {
+                    name: segmentation.into(),
+                    ns: ANNIS_NS.into(),
+                },
+                String::default(),
+            );
             let new_token = Token {
                 node_name: new_node_name.clone(),
                 start: first_covered_idx,

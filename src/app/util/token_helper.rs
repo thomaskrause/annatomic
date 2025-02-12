@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use graphannis::{graph::GraphStorage, model::AnnotationComponentType, AnnotationGraph};
 use graphannis_core::{
     annostorage::NodeAnnotationStorage,
-    dfs,
+    dfs::CycleSafeDFS,
     graph::{storage::union::UnionEdgeContainer, ANNIS_NS},
     types::{AnnoKey, Component, NodeID},
 };
@@ -90,6 +90,22 @@ impl<'a> TokenHelper<'a> {
         }
     }
 
+    pub fn is_segmentation_token(&self, id: NodeID, seg: &str) -> anyhow::Result<bool> {
+        if self.node_annos.has_value_for_item(&id, &TOKEN_KEY)? {
+            if let Some(gs_ordering) = self.ordering_gs.get(seg) {
+                let part_of_seg_component =
+                    gs_ordering.has_outgoing_edges(id)? || gs_ordering.has_ingoing_edges(id)?;
+                let has_seg_label = !self
+                    .node_annos
+                    .get_all_keys_for_item(&id, None, Some(seg))?
+                    .is_empty();
+                return Ok(part_of_seg_component
+                    || (has_seg_label && gs_ordering.source_nodes().next().is_none()));
+            }
+        }
+        Ok(false)
+    }
+
     pub fn has_outgoing_coverage_edges(&self, id: NodeID) -> anyhow::Result<bool> {
         for c in self.cov_edges.iter() {
             if c.has_outgoing_edges(id)? {
@@ -173,7 +189,7 @@ impl<'a> TokenHelper<'a> {
                 .map(|gs| gs.as_edgecontainer())
                 .collect_vec(),
         );
-        let it = dfs::CycleSafeDFS::new(&coverage, node_id, 1, usize::MAX);
+        let it = CycleSafeDFS::new(&coverage, node_id, 1, usize::MAX);
         for step in it {
             let step = step?;
             if self.is_token(step.node)? {
@@ -233,27 +249,38 @@ impl<'a> TokenHelper<'a> {
                 .ordering_gs
                 .get("")
                 .context("Missing base token graph storage component")?;
-            if let Some(token_before) = gs_tok.get_ingoing_edges(*first_covered_token).next() {
-                let token_before = token_before?;
+            let dfs = CycleSafeDFS::new_inverse(
+                gs_tok.as_edgecontainer(),
+                *first_covered_token,
+                1,
+                usize::MAX,
+            );
+            for step in dfs {
+                let step = step?;
+                let token_before = step.node;
 
                 if let Some(segmentation) = segmentation {
                     // If a segmentation node is requested as result, find the one covering this token
-
                     let mut segmentation_nodes = Vec::new();
                     for gs_cov in &self.cov_edges {
                         for n in gs_cov.get_ingoing_edges(token_before) {
-                            segmentation_nodes.push(n?);
+                            let n = n?;
+                            if self.is_segmentation_token(n, segmentation)? {
+                                segmentation_nodes.push(n);
+                            }
                         }
                     }
 
-                    self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
-                    Ok(segmentation_nodes.last().copied())
+                    if !segmentation_nodes.is_empty() {
+                        self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
+                        return Ok(segmentation_nodes.last().copied());
+                    }
                 } else {
-                    Ok(Some(token_before))
+                    return Ok(Some(token_before));
                 }
-            } else {
-                Ok(None)
             }
+
+            Ok(None)
         } else {
             Ok(None)
         }
@@ -280,28 +307,38 @@ impl<'a> TokenHelper<'a> {
                 .ordering_gs
                 .get("")
                 .context("Missing base token graph storage component")?;
-            if let Some(token_after) = gs_tok.get_outgoing_edges(*last_covered_token).next() {
-                let token_after = token_after?;
+
+            let dfs = CycleSafeDFS::new(
+                gs_tok.as_edgecontainer(),
+                *last_covered_token,
+                1,
+                usize::MAX,
+            );
+            for step in dfs {
+                let step = step?;
+                let token_after = step.node;
 
                 if let Some(segmentation) = segmentation {
                     // If a segmentation node is requested as result, find the one covering this token
                     let mut segmentation_nodes = Vec::new();
                     for gs_cov in &self.cov_edges {
                         for n in gs_cov.get_ingoing_edges(token_after) {
-                            segmentation_nodes.push(n?);
+                            let n = n?;
+                            if self.is_segmentation_token(n, segmentation)? {
+                                segmentation_nodes.push(n);
+                            }
                         }
                     }
-                    self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
-                    Ok(segmentation_nodes.first().copied())
+                    if !segmentation_nodes.is_empty() {
+                        self.sort_token(&mut segmentation_nodes, Some(segmentation))?;
+                        return Ok(segmentation_nodes.first().copied());
+                    }
                 } else {
-                    Ok(Some(token_after))
+                    return Ok(Some(token_after));
                 }
-            } else {
-                Ok(None)
             }
-        } else {
-            Ok(None)
         }
+        Ok(None)
     }
 }
 
